@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <title>Auditoría Colombia Solar</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+            <div class="logo">
+                <div class="logo-mark" aria-hidden="true">☀️</div>
+                <span>Auditoría</span>
+            </div>
+            <nav class="nav-menu" aria-label="Navegación principal">
+                <button type="button" class="nav-item active" data-section="upload" aria-current="page">
+                    <span class="icon" aria-hidden="true">📤</span>
+                    <span>Cargar</span>
+                </button>
+                <button type="button" class="nav-item" data-section="review">
+                    <span class="icon" aria-hidden="true">📋</span>
+                    <span>Revisar</span>
+                </button>
+                <button type="button" class="nav-item" data-section="export">
+                    <span class="icon" aria-hidden="true">📊</span>
+                    <span>Exportar</span>
+                </button>
+            </nav>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="main-content">
+            <header class="app-header">
+                <div class="header-content">
+                    <h1>Colombia Solar - Auditoría de Caracterización</h1>
+                    <p>Verificación automática de formularios</p>
+                </div>
+                <div class="header-actions">
+                    <span id="statusBadge" class="status-badge idle" role="status" aria-live="polite">Listo</span>
+                </div>
+            </header>
+
+            <!-- SECCIÓN: CARGAR PDFs -->
+            <section id="uploadSection" class="section active">
+                <div class="section-header">
+                    <h2>Cargar Documentos</h2>
+                    <p>Selecciona PDFs o el paquete completo. También puedes cargar la carpeta de imágenes para buscar respaldos por vivienda.</p>
+                </div>
+
+                <div class="upload-container">
+                    <div id="uploadArea" class="upload-area">
+                        <div class="upload-icon" aria-hidden="true">📁</div>
+                        <h3>Arrastra archivos o carpetas aquí</h3>
+                        <p>o usa los botones de abajo</p>
+
+                        <div class="upload-buttons">
+                            <button type="button" id="pickFileBtn" class="btn btn-primary">
+                                <span aria-hidden="true">📄</span> Elegir PDF(s)
+                            </button>
+                            <button type="button" id="pickFolderBtn" class="btn btn-secondary">
+                                <span aria-hidden="true">📁</span> Elegir carpeta
+                            </button>
+                            <button type="button" id="pickImagesBtn" class="btn btn-secondary">
+                                <span aria-hidden="true">🖼️</span> Agregar carpeta de imágenes
+                            </button>
+                        </div>
+                        <input type="file" id="pdfFile" accept=".pdf,application/pdf" multiple class="file-input" aria-label="Seleccionar PDFs">
+                        <input type="file" id="pdfFolder" webkitdirectory directory multiple class="file-input" aria-label="Seleccionar carpeta">
+                        <input type="file" id="imageFolder" webkitdirectory directory multiple class="file-input" aria-label="Seleccionar carpeta de imágenes">
+                    </div>
+
+                    <!-- ESTADO DE CARGA -->
+                    <div id="uploadStatus" class="upload-status hidden">
+                        <div class="status-content">
+                            <div class="status-icon" aria-hidden="true">✓</div>
+                            <div class="status-text">
+                                <h4 id="statusTitle">Archivos seleccionados</h4>
+                                <p id="statusMessage"></p>
+                            </div>
+                        </div>
+                        <label class="option-check" title="Lee las fotos con OCR local (no se envían imágenes a internet). Puede tardar más.">
+                            <input type="checkbox" id="optVerifyImages" checked>
+                            Verificar imágenes del PDF y buscar respaldos en carpeta (OCR)
+                        </label>
+                        <button type="button" id="processPdfBtn" class="btn btn-success">
+                            <span aria-hidden="true">⚡</span> Procesar PDFs
+                        </button>
+                    </div>
+                </div>
+
+                <!-- LOADING INDICATOR -->
+                <div id="loadingIndicator" class="loading-indicator hidden" role="status" aria-live="polite">
+                    <div class="spinner"></div>
+                    <p id="loadingText">Procesando...</p>
+                    <div class="progress"><div id="progressFill" class="progress-fill"></div></div>
+                    <button type="button" id="cancelProcessBtn" class="btn btn-secondary">Cancelar</button>
+                </div>
+            </section>
+
+            <!-- SECCIÓN: REVISAR -->
+            <section id="reviewSection" class="section">
+                <div class="section-header">
+                    <h2>Revisión de Items</h2>
+                    <p id="reviewStats">Procesa uno o más PDFs para ver los resultados</p>
+                </div>
+
+                <!-- RESUMEN -->
+                <div id="summaryCards" class="summary-cards hidden">
+                    <div class="card">
+                        <div class="card-value" id="totalItems">0</div>
+                        <div class="card-label">Evaluados</div>
+                    </div>
+                    <div class="card success">
+                        <div class="card-value" id="compliantCount">0</div>
+                        <div class="card-label">Cumplen</div>
+                    </div>
+                    <div class="card error">
+                        <div class="card-value" id="nonCompliantCount">0</div>
+                        <div class="card-label">No Cumplen</div>
+                    </div>
+                    <div class="card warning">
+                        <div class="card-value" id="pendingCount">0</div>
+                        <div class="card-label">Por revisar</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-value" id="notApplicableCount">0</div>
+                        <div class="card-label">No aplica</div>
+                    </div>
+                </div>
+
+                <!-- BARRA DE CUMPLIMIENTO -->
+                <div class="compliance-section hidden" id="complianceSection">
+                    <div class="compliance-header">
+                        <span>Cumplimiento General</span>
+                        <span id="compliancePercent">0%</span>
+                    </div>
+                    <div class="compliance-bar">
+                        <div id="complianceFill" class="compliance-fill"></div>
+                    </div>
+                </div>
+
+                <!-- RESULTADOS POR PDF -->
+                <div id="pdfResults" class="pdf-results hidden">
+                    <h3>Resultado por PDF <small>(clic en una fila para ver sus ítems que no cumplen)</small></h3>
+                    <div class="table-scroll pdf-results-scroll">
+                        <table class="excel-table">
+                            <thead><tr><th>PDF</th><th>Resultado</th><th>No cumplen</th><th>Revisar</th><th>Resumen: por qué no cumple</th></tr></thead>
+                            <tbody id="pdfResultsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- FILTROS -->
+                <div class="filters-section">
+                    <input type="search" id="searchItems" placeholder="🔍 Buscar items, secciones o PDFs..." class="filter-input" aria-label="Buscar items">
+                    <select id="filterPdf" class="filter-select" aria-label="Filtrar por PDF">
+                        <option value="">Todos los PDFs</option>
+                    </select>
+                    <select id="filterStatus" class="filter-select" aria-label="Filtrar por estado">
+                        <option value="">Todos los estados</option>
+                        <option value="compliant">✅ Cumple</option>
+                        <option value="non-compliant">❌ No Cumple</option>
+                        <option value="review">🔎 Revisar</option>
+                        <option value="pending">⏳ Pendiente</option>
+                    </select>
+                    <select id="filterPriority" class="filter-select" aria-label="Filtrar por prioridad">
+                        <option value="">Todas las prioridades</option>
+                        <option value="critico">🔴 Crítico</option>
+                        <option value="alto">🟠 Alto</option>
+                        <option value="medio">🔵 Medio</option>
+                    </select>
+                </div>
+
+                <!-- LISTA DE ITEMS -->
+                <div id="itemsList" class="items-list">
+                    <div class="empty-state">
+                        <div class="empty-icon">🗂️</div>
+                        <p>No hay items para mostrar</p>
+                        <small>Procesa PDFs desde la pestaña Cargar</small>
+                    </div>
+                </div>
+                <div id="loadMoreWrap" class="load-more hidden">
+                    <span id="resultsInfo"></span>
+                    <button type="button" id="loadMoreBtn" class="btn btn-secondary">Mostrar más</button>
+                </div>
+            </section>
+
+            <!-- SECCIÓN: EXPORTAR -->
+            <section id="exportSection" class="section">
+                <div class="section-header">
+                    <h2>Exportar Resultados</h2>
+                    <p>Descarga el reporte en Excel</p>
+                </div>
+
+                <div class="export-container">
+                    <div class="export-card">
+                        <div class="export-icon" aria-hidden="true">📊</div>
+                        <h3>Reporte Completo</h3>
+                        <p>Matriz por PDF (CUMPLE / NO CUMPLE / REVISAR), resumen en viñetas, detalle y estadísticas</p>
+                        <button type="button" id="exportExcelBtn" class="btn btn-success">
+                            <span aria-hidden="true">⬇️</span> Descargar Excel
+                        </button>
+                    </div>
+                    <div class="export-card">
+                        <div class="export-icon" aria-hidden="true">👁️</div>
+                        <h3>Vista Previa</h3>
+                        <p>Revisa antes de descargar</p>
+                        <button type="button" id="previewExcelBtn" class="btn btn-secondary">
+                            <span aria-hidden="true">🔍</span> Ver Previa
+                        </button>
+                    </div>
+                </div>
+
+                <!-- PREVIEW -->
+                <div id="excelPreviewSection" class="excel-preview hidden">
+                    <div class="preview-header">
+                        <h3>Vista Previa del Reporte</h3>
+                        <button type="button" id="closeExcelPreviewBtn" class="btn-close" aria-label="Cerrar vista previa">✕</button>
+                    </div>
+                    <div id="excelPreviewContent" class="preview-content"></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- MODAL DE EVIDENCIA (recorte del PDF) -->
+    <div id="evidenceModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="evidenceTitle">
+        <div class="modal-content evidence-content">
+            <div class="modal-header">
+                <h2 id="evidenceTitle">Evidencia</h2>
+                <button type="button" class="btn-close" id="evidenceClose" aria-label="Cerrar">✕</button>
+            </div>
+            <p id="evidenceDesc" class="evidence-desc"></p>
+            <p id="evidenceNote" class="evidence-note"></p>
+            <div id="evidenceBody" class="evidence-body"></div>
+        </div>
+    </div>
+
+    <!-- MODAL PARA EDITAR ITEM -->
+    <div id="itemModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Revisar Item</h2>
+                <button type="button" class="btn-close" id="closeModal" aria-label="Cerrar">✕</button>
+            </div>
+            <form id="itemForm">
+                <div class="form-group">
+                    <p class="modal-item-title">Item #<span id="modalItemId"></span></p>
+                    <small id="modalItemPriority"></small>
+                </div>
+
+                <div class="form-group">
+                    <label for="itemDescription">Descripción</label>
+                    <textarea id="itemDescription" readonly></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="itemActual">Valor encontrado</label>
+                    <textarea id="itemActual" readonly></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="itemStatus">Estado</label>
+                    <select id="itemStatus" required>
+                        <option value="">Selecciona</option>
+                        <option value="compliant">✅ Cumple</option>
+                        <option value="non-compliant">❌ No Cumple</option>
+                        <option value="review">🔎 Revisar</option>
+                        <option value="pending">⏳ Pendiente</option>
+                    </select>
+                </div>
+
+                <div class="form-group hidden" id="observationGroup">
+                    <label for="itemObservation">Observación / motivo</label>
+                    <textarea id="itemObservation" placeholder="¿Por qué no cumple?"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="itemNotes">Notas</label>
+                    <textarea id="itemNotes" placeholder="Notas adicionales"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                    <button type="button" class="btn btn-success" id="saveNextBtn">Guardar y siguiente ›</button>
+                    <button type="button" class="btn btn-secondary" id="cancelBtn">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- NOTIFICACIONES -->
+    <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+    <!-- LIBRERÍAS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+
+    <!-- SCRIPTS (el orden importa) -->
+    <script src="data/beneficiarios.js"></script>
+    <script src="js/auditItems.js"></script>
+    <script src="js/pdfReader.js"></script>
+    <script src="js/imageChecker.js"></script>
+    <script src="js/itemChecker.js"></script>
+    <script src="js/excelExporter.js"></script>
+    <script src="js/evidenceViewer.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
