@@ -846,6 +846,54 @@ function sameAddress(a, b) {
     return x !== '' && x === y;
 }
 
+/** Forma canónica de una dirección: sin formato, abreviaturas unificadas y sin código DPL */
+function canonAddress(address) {
+    return String(address || '').toUpperCase()
+        .replace(/[#.,!_-]/g, ' ')
+        .replace(/\bAPARTAMENTO\b|\bAPTO\b|\bNO\b/g, ' ')
+        .replace(/\bMANZANA\b/g, 'MZ')
+        .replace(/\bCASA\b/g, 'CS')
+        .replace(/\bCALLE\b/g, 'CL')
+        .replace(/\b(CARRERA|CRA|CAR|CREO)\b/g, 'CR')
+        .replace(/(\d)\s*(SUR|S)\b/g, '$1S')
+        .replace(/\bD\s?L?P\s?L?\b.*$/, '')
+        .replace(/\b(BA|BC|BCS)\s?\d{3,}\b/g, '')
+        .replace(/\s+/g, ' ').trim();
+}
+
+function textSimilarity(a, b) {
+    if (a === b) return 1;
+    if (!a || !b) return 0;
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+        const cur = [i];
+        for (let j = 1; j <= b.length; j++) {
+            cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        }
+        prev = cur;
+    }
+    return 1 - prev[b.length] / Math.max(a.length, b.length);
+}
+
+let addressIndex = null;
+
+/** Mensaje de error si la dirección no coincide (≥90 %) con ninguna del listado; '' si coincide */
+function checkAddressAgainstList(address) {
+    if (typeof BENEFICIARIOS === 'undefined') return '';
+    if (!addressIndex) addressIndex = BENEFICIARIOS.map(b => ({ b, c: canonAddress(b.direccion) }));
+    const target = canonAddress(address);
+    if (!target) return '';
+    let best = null, bestScore = 0;
+    for (const e of addressIndex) {
+        if (Math.abs(e.c.length - target.length) > target.length * 0.2) continue;
+        const s = textSimilarity(target, e.c);
+        if (s > bestScore) { bestScore = s; best = e.b; }
+    }
+    if (bestScore >= 0.9) return '';
+    const hint = best ? ` Más parecida en el listado (${Math.round(bestScore * 100)}%): "${best.direccion}" (NIU ${best.niu})` : '';
+    return `La dirección "${address}" no coincide (mínimo 90%) con ninguna del listado de beneficiarios.${hint}`;
+}
+
 /** Devuelve un mensaje de error, o '' si el NIU existe en el listado y su dirección coincide */
 function checkNiuAgainstList(niu, address) {
     if (typeof BENEFICIARIOS === 'undefined') return '';
@@ -955,6 +1003,13 @@ function validateItem(item, values, ctx = { format: 'A', annexCount: 0 }) {
     }
     if (isFile) {
         return fail('wrong_attachment', 'Hay un archivo adjunto donde se esperaba una respuesta (SI/NO o texto)');
+    }
+
+    if (item.id === 6) {
+        if (!value) return fail('empty', 'Dirección vacía');
+        const addrCheck = checkAddressAgainstList(value);
+        if (addrCheck) return fail('niu_list', addrCheck);
+        return;
     }
 
     if (item.id === 85) {

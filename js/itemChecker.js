@@ -87,7 +87,7 @@ function itemCardHTML(item) {
         ${shortValue ? `<div class="item-value">📝 ${escapeHtml(shortValue)}</div>` : ''}
         ${note ? `<div class="item-note ${item.status}">${escapeHtml(note)}</div>` : ''}
         <div class="item-actions">
-            ${itemNeedsEvidence(item) ? '<button type="button" class="btn btn-secondary" data-action="evidence">🖼️ Ver evidencia</button>' : ''}
+            ${itemNeedsEvidence(item) ? '<button type="button" class="btn btn-secondary" data-action="evidence" title="Ver el recorte del PDF">🖼️ Ver evidencia</button><button type="button" class="btn btn-secondary" data-action="fullpdf" title="Ver todo el PDF">📄 PDF completo</button>' : ''}
             <button type="button" class="btn btn-primary" data-action="edit">✏️ Revisar / Editar</button>
         </div>`;
 }

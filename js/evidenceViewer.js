@@ -4,8 +4,52 @@
 let evidenceToken = 0;
 
 function itemNeedsEvidence(item) {
-    if (!item.evidence || item.notApplicable) return false;
-    return item.status === 'non-compliant' || item.status === 'review';
+    return Boolean(pdfDocuments[item.globalId.split('::')[0]]);
+}
+
+/** Muestra todas las páginas del PDF para revisarlo completo */
+async function openFullPdf(globalId) {
+    const item = allItemsData.find(i => i.globalId === globalId);
+    if (!item) return;
+    const doc = pdfDocuments[globalId.split('::')[0]];
+    const body = document.getElementById('evidenceBody');
+    const token = ++evidenceToken;
+
+    document.getElementById('evidenceTitle').textContent = `PDF completo — ${item.pdfName}`;
+    document.getElementById('evidenceDesc').textContent = `Item #${item.id}: ${item.description}`;
+    document.getElementById('evidenceNote').textContent = '';
+    body.innerHTML = '<p class="evidence-msg">Cargando PDF…</p>';
+    document.getElementById('evidenceModal').classList.remove('hidden');
+    if (!doc || !doc.file) {
+        body.innerHTML = '<p class="evidence-msg">El PDF no está disponible.</p>';
+        return;
+    }
+
+    let pdf;
+    try {
+        pdf = await pdfjsLib.getDocument({ data: await doc.file.arrayBuffer() }).promise;
+        const target = (item.evidence && item.evidence.page) || 1;
+        body.innerHTML = '';
+        let targetCanvas = null;
+        for (let n = 1; n <= pdf.numPages; n++) {
+            const page = await pdf.getPage(n);
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.ceil(viewport.width);
+            canvas.height = Math.ceil(viewport.height);
+            canvas.className = 'evidence-canvas';
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+            if (token !== evidenceToken) return;
+            body.appendChild(canvas);
+            if (n === target) targetCanvas = canvas;
+        }
+        if (targetCanvas) targetCanvas.scrollIntoView({ block: 'start' });
+    } catch (err) {
+        if (token === evidenceToken) body.innerHTML = '<p class="evidence-msg">No se pudo mostrar el PDF.</p>';
+        console.error(err);
+    } finally {
+        if (pdf) pdf.destroy();
+    }
 }
 
 async function openEvidence(globalId) {
@@ -18,14 +62,15 @@ async function openEvidence(globalId) {
 
     document.getElementById('evidenceTitle').textContent = `Item #${item.id} — ${item.pdfName}`;
     document.getElementById('evidenceDesc').textContent = item.description;
-    document.getElementById('evidenceNote').textContent = item.observation || item.imageNote || '';
+    document.getElementById('evidenceNote').textContent = item.observation || item.imageNote || item.autoReason || '';
     body.innerHTML = '<p class="evidence-msg">Cargando evidencia…</p>';
     modal.classList.remove('hidden');
 
-    if (!doc || !doc.file || !item.evidence) {
+    if (!doc || !doc.file) {
         body.innerHTML = '<p class="evidence-msg">No hay evidencia disponible para este ítem.</p>';
         return;
     }
+    if (!item.evidence) item.evidence = { page: 1, full: true };
 
     let pdf;
     try {

@@ -82,6 +82,10 @@ function initializeEventListeners() {
     list.addEventListener('click', e => {
         const card = e.target.closest('.item-card');
         if (!card) return;
+        if (e.target.closest('[data-action="fullpdf"]')) {
+            openFullPdf(card.dataset.itemId);
+            return;
+        }
         if (e.target.closest('[data-action="evidence"]')) {
             openEvidence(card.dataset.itemId);
             return;
