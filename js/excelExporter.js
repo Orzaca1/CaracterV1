@@ -109,16 +109,16 @@ function bulletsHeight(...texts) {
 
 /** Hoja 1: matriz (PDF x ítems) */
 function buildMatrixSheet(wb) {
-    const FIXED = 6;
+    const FIXED = 7;
     const headers = [
-        'Archivo PDF', 'Resultado', 'N° No Cumple', 'Resumen general: por qué no cumple',
+        'Archivo PDF', 'Número de visita', 'Resultado', 'N° No Cumple', 'Resumen general: por qué no cumple',
         'N° Revisar', 'Ítems para REVISAR', ...itemHeaders()
     ];
-    const ws = wb.addWorksheet('Auditoría', { views: [{ state: 'frozen', xSplit: 2, ySplit: 1 }] });
+    const ws = wb.addWorksheet('Auditoría', { views: [{ state: 'frozen', xSplit: 3, ySplit: 1 }] });
 
     ws.columns = headers.map((h, i) => ({
         header: h,
-        width: i === 0 ? 38 : i === 1 ? 14 : i === 2 ? 11 : i === 3 ? 80 : i === 4 ? 10 : i === 5 ? 60 : 17
+        width: i === 0 ? 38 : i === 1 ? 16 : i === 2 ? 14 : i === 3 ? 11 : i === 4 ? 80 : i === 5 ? 10 : i === 6 ? 60 : 17
     }));
     styleHeaderRow(ws.getRow(1), 78);
 
@@ -126,9 +126,9 @@ function buildMatrixSheet(wb) {
         const doc = pdfDocuments[name];
 
         if (doc.status === 'error') {
-            const row = ws.addRow([xlText(name), 'ERROR', '', xlText(doc.error)]);
-            styleStatusCell(row.getCell(2), 'pending');
-            row.getCell(4).alignment = { wrapText: true, vertical: 'top' };
+            const row = ws.addRow([xlText(name), '', 'ERROR', '', xlText(doc.error)]);
+            styleStatusCell(row.getCell(3), 'pending');
+            row.getCell(5).alignment = { wrapText: true, vertical: 'top' };
             return;
         }
 
@@ -138,9 +138,13 @@ function buildMatrixSheet(wb) {
         const rev = summarizeReview(doc.items);
         const result = bad.count ? 'NO CUMPLE' : rev.count ? 'REVISAR' : 'CUMPLE';
         const resultStatus = bad.count ? 'non-compliant' : rev.count ? 'review' : 'compliant';
+        const visit = byId[12] && byId[12].found && String(byId[12].actualValue || '').trim() && !byId[12].notApplicable
+            ? String(byId[12].actualValue).trim()
+            : 'Primera Visita';
 
         const row = ws.addRow([
             xlText(name),
+            xlText(visit),
             result,
             bad.count,
             xlText(bad.text || 'Cumple todos los ítems'),
@@ -151,9 +155,9 @@ function buildMatrixSheet(wb) {
                 : STATUS_LABEL_XL[byId[def.id].status] || 'PENDIENTE')
         ]);
 
-        styleStatusCell(row.getCell(2), resultStatus);
-        [1, 4, 6].forEach(c => { row.getCell(c).alignment = { wrapText: true, vertical: 'top' }; });
-        [3, 5].forEach(c => { row.getCell(c).alignment = { horizontal: 'center', vertical: 'top' }; });
+        styleStatusCell(row.getCell(3), resultStatus);
+        [1, 5, 7].forEach(c => { row.getCell(c).alignment = { wrapText: true, vertical: 'top' }; });
+        [2, 4, 6].forEach(c => { row.getCell(c).alignment = { horizontal: 'center', vertical: 'top' }; });
         row.height = bulletsHeight(bad.text, rev.text);
 
         AUDIT_ITEMS.forEach((def, idx) => {

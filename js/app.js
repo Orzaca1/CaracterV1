@@ -100,17 +100,6 @@ function initializeEventListeners() {
     });
     $('loadMoreBtn').addEventListener('click', appendItems);
 
-    // Tabla por PDF: clic = ver sus ítems que no cumplen
-    const pdfBody = $('pdfResultsBody');
-    pdfBody.addEventListener('click', e => {
-        const row = e.target.closest('.pdf-row');
-        if (row) filterByPdf(row.dataset.pdf);
-    });
-    pdfBody.addEventListener('keydown', e => {
-        const row = e.target.closest('.pdf-row');
-        if (row && e.key === 'Enter') filterByPdf(row.dataset.pdf);
-    });
-
     // Avisa si hay revisiones manuales sin exportar
     window.addEventListener('beforeunload', e => {
         if (hasUnsavedEdits) { e.preventDefault(); e.returnValue = ''; }
@@ -370,8 +359,6 @@ function updateReviewSection() {
     $('summaryCards').classList.remove('hidden');
     $('complianceSection').classList.remove('hidden');
     $('reviewStats').textContent = `${stats.total} items evaluados de ${pdfCount} PDF(s) · ${stats.notApplicable} no aplican`;
-
-    renderPdfTable();
     populatePdfFilter();
     applyFilters();
 }

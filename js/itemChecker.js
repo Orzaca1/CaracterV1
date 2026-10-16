@@ -105,37 +105,3 @@ function updateLoadMore() {
     document.getElementById('loadMoreBtn').classList.toggle('hidden', renderedCount >= total);
 }
 
-/** Tabla de resultados por PDF (resultado + viñetas "• Ítem: comentario") */
-function renderPdfTable() {
-    const wrap = document.getElementById('pdfResults');
-    const body = document.getElementById('pdfResultsBody');
-    const names = Object.keys(pdfDocuments);
-    if (names.length === 0) {
-        wrap.classList.add('hidden');
-        return;
-    }
-
-    const MAX_LINES = 5;
-    const rows = names.map(name => {
-        const doc = pdfDocuments[name];
-        if (doc.status === 'error') {
-            return `<tr><td class="pdf-name">${escapeHtml(name)}</td>
-                <td><span class="result-badge error">ERROR</span></td><td>–</td><td>–</td>
-                <td class="pdf-summary">${escapeHtml(doc.error)}</td></tr>`;
-        }
-        const bad = summarizeNonCompliance(doc.items);
-        const rev = summarizeReview(doc.items);
-        const result = bad.count ? ['bad', 'NO CUMPLE'] : rev.count ? ['warn', 'REVISAR'] : ['ok', 'CUMPLE'];
-        const shown = bad.lines.slice(0, MAX_LINES);
-        const more = bad.lines.length > MAX_LINES ? `\n… y ${bad.lines.length - MAX_LINES} más (ver Excel)` : '';
-        return `<tr class="pdf-row" data-pdf="${escapeHtml(name)}" tabindex="0" title="Ver los ítems de este PDF">
-            <td class="pdf-name">${escapeHtml(name)}</td>
-            <td><span class="result-badge ${result[0]}">${result[1]}</span></td>
-            <td class="pdf-count">${bad.count}</td>
-            <td class="pdf-count">${rev.count}</td>
-            <td class="pdf-summary">${escapeHtml(shown.join('\n') + more) || '—'}</td></tr>`;
-    });
-
-    body.innerHTML = rows.join('');
-    wrap.classList.remove('hidden');
-}
