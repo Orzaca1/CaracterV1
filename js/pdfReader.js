@@ -747,6 +747,16 @@ async function processPDF({ file, path }, hooks = {}) {
             found[id] = true;
         });
 
+        // Ítems sin pregunta propia (derivados, geopunto...): usan la pregunta vecina; si no hay, la página 1
+        const ids = AUDIT_ITEMS.map(d => d.id);
+        ids.forEach((id, n) => {
+            if (evidence[id]) return;
+            let ref = null;
+            for (let k = n + 1; k < ids.length && !ref; k++) ref = evidence[ids[k]];
+            for (let k = n - 1; k >= 0 && !ref; k--) ref = evidence[ids[k]];
+            evidence[id] = ref ? { ...ref } : { page: 1, full: true };
+        });
+
         const notApplicableReasons = applyApplicabilityRules(values, found);
 
         const items = AUDIT_ITEMS.map(def => {
@@ -879,6 +889,13 @@ function validateItem(item, values, ctx = { format: 'A', annexCount: 0 }) {
     if (item.notApplicable) {
         item.autoReason = item.notApplicableReason;
         return;
+    }
+
+    // Avisos informativos (solo comentario, no cambian el estado)
+    if (item.id === 26 && normalizeText(value) === 'NO') {
+        item.autoReason = 'La persona no va a participar en el Programa Colombia Solar: no se revisa el resto del formulario';
+    } else if (item.id === 13 && normalizeText(value) === 'SI') {
+        item.autoReason = 'La casa está cerrada';
     }
 
     // Riesgos eléctricos o estructurales: siempre CUMPLE

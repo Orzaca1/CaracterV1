@@ -208,7 +208,7 @@ function buildFolderEvidenceSheet(wb) {
         const row = ws.addRow([
             xlText(item.pdfName), item.id, xlText(item.description),
             xlText(item.folderImageMatch), STATUS_LABEL_XL[item.status] || String(item.status).toUpperCase(),
-            xlText(item.observation || item.imageNote)
+            xlText(item.observation || item.imageNote || (item.id === 13 || item.id === 26 ? item.autoReason : ''))
         ]);
         row.eachCell(cell => { cell.alignment = { wrapText: true, vertical: 'top' }; });
         styleStatusCell(row.getCell(5), item.status);
