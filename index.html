@@ -32,6 +32,18 @@
                     <span>Exportar</span>
                 </button>
             </nav>
+            <div class="pdf-checklist" id="pdfChecklist">
+                <div class="checklist-head">
+                    <strong>Checklist de PDFs</strong>
+                    <span id="checklistCount">0/0</span>
+                </div>
+                <div class="checklist-filter">
+                    <button type="button" class="chk-filter active" data-chk="all">Todos</button>
+                    <button type="button" class="chk-filter" data-chk="pending">Faltan</button>
+                    <button type="button" class="chk-filter" data-chk="done">Revisados</button>
+                </div>
+                <ul id="checklistItems" class="checklist-items"></ul>
+            </div>
         </aside>
 
         <!-- MAIN CONTENT -->

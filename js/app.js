@@ -101,6 +101,7 @@ function initializeEventListeners() {
     });
     $('loadMoreBtn').addEventListener('click', appendItems);
     $('clearSavedBtn').addEventListener('click', clearSavedSession);
+    initChecklist();
 
 }
 
@@ -409,6 +410,80 @@ function populatePdfFilter() {
         });
 
     if (current && pdfDocuments[current]) select.value = current;
+    renderChecklist();
+}
+
+/* ============ CHECKLIST DE PDFs (barra lateral) ============ */
+const CHECKLIST_KEY = 'caracter-pdfs-revisados';
+let checklistMode = 'all';
+
+function loadReviewedSet() {
+    try { return new Set(JSON.parse(localStorage.getItem(CHECKLIST_KEY) || '[]')); }
+    catch (e) { return new Set(); }
+}
+
+function saveReviewedSet(set) {
+    try { localStorage.setItem(CHECKLIST_KEY, JSON.stringify([...set])); } catch (e) { console.warn(e); }
+}
+
+function renderChecklist() {
+    const list = $('checklistItems');
+    if (!list) return;
+    const reviewed = loadReviewedSet();
+    const names = Object.keys(pdfDocuments).filter(n => pdfDocuments[n].status === 'processed');
+    const done = names.filter(n => reviewed.has(n)).length;
+    $('checklistCount').textContent = `${done}/${names.length}`;
+
+    const shown = names.filter(n => checklistMode === 'all' || (checklistMode === 'done') === reviewed.has(n));
+    list.innerHTML = '';
+    if (!shown.length) {
+        list.innerHTML = '<li class="checklist-empty">Sin PDFs</li>';
+        return;
+    }
+    const fragment = document.createDocumentFragment();
+    shown.forEach(name => {
+        const li = document.createElement('li');
+        li.className = 'checklist-row' + (reviewed.has(name) ? ' done' : '');
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = reviewed.has(name);
+        box.title = 'Marcar como revisado';
+        box.dataset.name = name;
+        const label = document.createElement('button');
+        label.type = 'button';
+        label.className = 'checklist-name';
+        label.dataset.name = name;
+        label.title = name;
+        label.textContent = name.replace(/\.pdf$/i, '');
+        li.append(box, label);
+        fragment.appendChild(li);
+    });
+    list.appendChild(fragment);
+}
+
+function initChecklist() {
+    $('checklistItems').addEventListener('change', e => {
+        if (!e.target.matches('input[type=checkbox]')) return;
+        const set = loadReviewedSet();
+        if (e.target.checked) set.add(e.target.dataset.name); else set.delete(e.target.dataset.name);
+        saveReviewedSet(set);
+        renderChecklist();
+    });
+    $('checklistItems').addEventListener('click', e => {
+        const btn = e.target.closest('.checklist-name');
+        if (!btn) return;
+        navigateToSection('review');
+        $('searchItems').value = '';
+        $('filterStatus').value = '';
+        $('filterPriority').value = '';
+        $('filterPdf').value = btn.dataset.name;
+        applyFilters();
+    });
+    document.querySelectorAll('.chk-filter').forEach(b => b.addEventListener('click', () => {
+        checklistMode = b.dataset.chk;
+        document.querySelectorAll('.chk-filter').forEach(x => x.classList.toggle('active', x === b));
+        renderChecklist();
+    }));
 }
 
 function getFilteredItems() {

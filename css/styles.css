@@ -99,6 +99,21 @@ html, body {
     border-bottom: 1px solid var(--border-color);
 }
 
+/* ============ CHECKLIST ============ */
+.pdf-checklist { display: flex; flex-direction: column; gap: 8px; min-height: 0; flex: 1; }
+.checklist-head { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-primary); }
+.checklist-filter { display: flex; gap: 4px; }
+.chk-filter { flex: 1; padding: 4px 2px; font-size: 11px; font-family: inherit; cursor: pointer;
+    background: transparent; color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+.chk-filter.active { background: var(--brand-gradient); color: #fff; border-color: transparent; }
+.checklist-items { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 80px; }
+.checklist-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
+.checklist-row.done .checklist-name { text-decoration: line-through; opacity: 0.6; }
+.checklist-name { flex: 1; min-width: 0; text-align: left; background: none; border: none; padding: 0; cursor: pointer;
+    font-family: inherit; font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.checklist-name:hover { color: var(--text-primary); }
+.checklist-empty { font-size: 12px; color: var(--text-secondary); }
+
 .logo-mark {
     width: 40px;
     height: 40px;

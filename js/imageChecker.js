@@ -300,6 +300,26 @@ function nameCheck(words, values) {
     return best;
 }
 
+/** Cruza número (NIC / matrícula), nombre y dirección del formulario con el texto leído (solo informativo) */
+function docDataNote(expected, text, words, values) {
+    const label = expected === 'recibo' ? 'NIC' : 'matrícula';
+    const parts = [];
+    const bonus = numberBonus(expected, text, values);
+    const hasNumber = DOC_FAMILIES[expected].idItems.some(id => String(values[id] || '').replace(/\D/g, '').length >= 6);
+    if (hasNumber) parts.push(bonus ? `el ${label} coincide con el formulario` : `no se pudo leer el ${label} del formulario`);
+
+    const nm = nameCheck(words, values);
+    if (nm) parts.push(nm.hits / nm.total >= 0.5 ? 'el nombre coincide con el formulario' : 'no se encontró el nombre del formulario');
+
+    const addr = fold(String(values[6] || '')).split(' ').filter(t => /\d/.test(t) && t.length >= 2);
+    if (addr.length) {
+        const wordSet = new Set(words);
+        const found = addr.filter(t => hasWord(wordSet, words, t)).length;
+        parts.push(found / addr.length >= 0.6 ? 'la dirección coincide' : 'no se pudo confirmar la dirección');
+    }
+    return parts.length ? `; ${parts.join('; ')}` : '';
+}
+
 function judgeDocument(expected, text, values, side = '') {
     const words = fold(text).split(' ').filter(w => w.length >= 2);
     const family = DOC_FAMILIES[expected];
@@ -313,6 +333,7 @@ function judgeDocument(expected, text, values, side = '') {
                 ? '; el nombre coincide con el formulario'
                 : '; no se pudo leer el nombre del formulario en la cédula';
         }
+        if (expected === 'recibo' || expected === 'certificado') extra = docDataNote(expected, text, words, values);
         return { verdict: 'ok', note: `Imagen verificada: ${family.label}${side ? ` (${side})` : ''}${extra}` };
     }
     if (side && family.sides) {

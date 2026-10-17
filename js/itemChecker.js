@@ -46,6 +46,7 @@ function renderItems(items = allItemsData) {
 /** Agrega la siguiente página de items */
 function appendItems() {
     const list = document.getElementById('itemsList');
+    const token = currentList;
     const next = currentList.slice(renderedCount, renderedCount + PAGE_SIZE);
     const fragment = document.createDocumentFragment();
 
@@ -61,6 +62,10 @@ function appendItems() {
     list.appendChild(fragment);
     renderedCount += next.length;
     updateLoadMore();
+    // Se muestran todos los ítems: el resto se agrega por tandas para no congelar la página
+    if (renderedCount < currentList.length) {
+        requestAnimationFrame(() => { if (token === currentList) appendItems(); });
+    }
 }
 
 function itemCardHTML(item) {
@@ -102,6 +107,6 @@ function updateLoadMore() {
     }
     wrap.classList.remove('hidden');
     document.getElementById('resultsInfo').textContent = `Mostrando ${renderedCount} de ${total}`;
-    document.getElementById('loadMoreBtn').classList.toggle('hidden', renderedCount >= total);
+    document.getElementById('loadMoreBtn').classList.add('hidden');
 }
 
