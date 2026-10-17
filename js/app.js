@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', init);
 
 function init() {
     initializeEventListeners();
+    restoreSavedSession();
 
     if (typeof pdfjsLib === 'undefined') {
         showToast('No se pudo cargar pdf.js. Revisa tu conexión a internet y recarga la página.', 'error', 8000);
@@ -99,11 +100,8 @@ function initializeEventListeners() {
         }
     });
     $('loadMoreBtn').addEventListener('click', appendItems);
+    $('clearSavedBtn').addEventListener('click', clearSavedSession);
 
-    // Avisa si hay revisiones manuales sin exportar
-    window.addEventListener('beforeunload', e => {
-        if (hasUnsavedEdits) { e.preventDefault(); e.returnValue = ''; }
-    });
 }
 
 /* ============ CARGA DE ARCHIVOS ============ */
@@ -271,9 +269,8 @@ async function processPDFs() {
     showLoading(true, `Procesando ${selectedFiles.length} PDF(s)...`);
     setProgress(0);
 
-    pdfDocuments = {};
-    allItemsData = [];
     const failed = [];
+    let processedNow = 0;
     let ocrWarningShown = false;
     let unmatchedImageFolders = 0;
 
@@ -298,16 +295,19 @@ async function processPDFs() {
                 }
             });
             if (!result.ok) failed.push(result);
+            processedNow++;
+            await saveDocument(result.key);
         }
         setProgress(100);
 
-        if (Object.keys(pdfDocuments).length === 0) {
+        if (processedNow === 0) {
             updateStatusBadge('idle', 'Cancelado');
             return;
         }
-        if (failed.length === Object.keys(pdfDocuments).length) {
+        if (failed.length === processedNow) {
             updateStatusBadge('error', '✗ Error');
             showToast(`No se pudo leer ningún PDF. ${failed[0].error}`, 'error', 8000);
+            updateReviewSection();
             return;
         }
 
@@ -318,8 +318,8 @@ async function processPDFs() {
         updateReviewSection();
         navigateToSection('review');
         updateStatusBadge('success', '✓ Completado');
-        const doneCount = Object.keys(pdfDocuments).length - failed.length;
-        showToast(`${doneCount} PDF(s) procesado(s)${cancelRequested ? ' (proceso cancelado)' : ''}`, 'success');
+        const doneCount = processedNow - failed.length;
+        showToast(`${doneCount} PDF(s) procesado(s) y guardado(s) · ${Object.keys(pdfDocuments).length} en total${cancelRequested ? ' (proceso cancelado)' : ''}`, 'success');
 
         if (failed.length) {
             const names = failed.map(f => `${f.key} (${f.error})`).join('; ');
@@ -341,6 +341,36 @@ async function processPDFs() {
         $('processPdfBtn').disabled = false;
         showLoading(false);
     }
+}
+
+/* ============ AVANCE GUARDADO ============ */
+async function restoreSavedSession() {
+    const stored = await loadStoredDocuments();
+    if (!stored.length) return;
+    stored.sort((a, b) => a.key.localeCompare(b.key, 'es', { numeric: true }));
+    stored.forEach(rec => {
+        const { key, ...doc } = rec;
+        pdfDocuments[key] = doc;
+        if (doc.items) allItemsData.push(...doc.items);
+    });
+    updateReviewSection();
+    updateStatusBadge('success', `✓ ${stored.length} PDF(s) guardados`);
+    showToast(`Se recuperó tu avance: ${stored.length} PDF(s)`, 'success');
+}
+
+async function clearSavedSession() {
+    if (!confirm('¿Borrar todo el avance guardado (PDFs revisados y cambios manuales)? Esta acción no se puede deshacer.')) return;
+    pdfDocuments = {};
+    allItemsData = [];
+    await clearStoredDocuments();
+    hasUnsavedEdits = false;
+    $('summaryCards').classList.add('hidden');
+    $('complianceSection').classList.add('hidden');
+    $('reviewStats').textContent = 'Procesa uno o más PDFs para ver los resultados';
+    populatePdfFilter();
+    applyFilters();
+    updateStatusBadge('idle', 'Listo');
+    showToast('Avance borrado', 'info');
 }
 
 /* ============ REVISIÓN ============ */
@@ -465,6 +495,7 @@ function saveCurrentItem() {
     item.autoReason = '';
     item.imageNote = '';
     hasUnsavedEdits = true;
+    saveDocument(item.pdfName);
 
     updateReviewSection();   // refresca cifras y mantiene los filtros activos
     showToast('Item actualizado', 'success', 1500);

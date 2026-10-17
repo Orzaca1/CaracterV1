@@ -808,19 +808,23 @@ async function processPDF({ file, path }, hooks = {}) {
 
     } catch (error) {
         console.error(`Error procesando ${key}:`, error);
-        pdfDocuments[key] = { status: 'error', error: error.message };
+        pdfDocuments[key] = { status: 'error', error: error.message, file };
         return { key, ok: false, error: error.message };
     } finally {
         if (pdfDoc) pdfDoc.destroy().catch(() => {});
     }
 }
 
-/** Clave única por archivo (evita colisiones si hay mismo nombre en subcarpetas) */
+/** La clave es la ruta del archivo: reprocesar un PDF reemplaza su resultado anterior */
 function uniqueFileKey(path) {
-    let key = path;
-    let n = 2;
-    while (key in pdfDocuments) key = `${path} (${n++})`;
-    return key;
+    removeDocument(path);
+    return path;
+}
+
+function removeDocument(key) {
+    if (!(key in pdfDocuments)) return;
+    delete pdfDocuments[key];
+    allItemsData = allItemsData.filter(i => i.pdfName !== key);
 }
 
 /* ============ NIU vs LISTA DE BENEFICIARIOS ============ */
