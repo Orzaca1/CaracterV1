@@ -287,13 +287,33 @@ function numberBonus(familyKey, text, values) {
 
 /* ============ VEREDICTOS ============ */
 
+/** Nombres/apellidos del formulario (persona que atiende o propietario) que aparecen en el texto de la imagen */
+function nameCheck(words, values) {
+    const wordSet = new Set(words);
+    let best = null;
+    for (const [a, b] of [[37, 38], [14, 15]]) {
+        const tokens = fold(`${values[a] || ''} ${values[b] || ''}`).split(' ').filter(t => t.length >= 3);
+        if (!tokens.length) continue;
+        const hits = tokens.filter(t => hasWord(wordSet, words, t)).length;
+        if (!best || hits / tokens.length > best.hits / best.total) best = { hits, total: tokens.length };
+    }
+    return best;
+}
+
 function judgeDocument(expected, text, values, side = '') {
     const words = fold(text).split(' ').filter(w => w.length >= 2);
     const family = DOC_FAMILIES[expected];
     const own = scoreFamily(expected, words) + numberBonus(expected, text, values);
     const sideScore = side && family.sides ? scorePhrases(family.sides[side] || [], words) : 0;
     if (own >= family.min && (!side || sideScore >= 2)) {
-        return { verdict: 'ok', note: `Imagen verificada: ${family.label}${side ? ` (${side})` : ''}` };
+        let extra = '';
+        if (expected === 'cedula' && side === 'anverso') {
+            const nm = nameCheck(words, values);
+            if (nm) extra = nm.hits / nm.total >= 0.5
+                ? '; el nombre coincide con el formulario'
+                : '; no se pudo leer el nombre del formulario en la cédula';
+        }
+        return { verdict: 'ok', note: `Imagen verificada: ${family.label}${side ? ` (${side})` : ''}${extra}` };
     }
     if (side && family.sides) {
         const otherSide = side === 'anverso' ? 'reverso' : 'anverso';
@@ -442,6 +462,9 @@ async function verifyOne(item, exp, recs, values) {
                 result = rotatedResult;
             }
         }
+    }
+    if (exp.kind !== 'doc' && typeof classifyImage === 'function') {
+        result = refineWithClassification(exp, item.id, result, await classifyImage(px));
     }
     applyVerdict(item, result);
     return result.verdict === 'ok';
