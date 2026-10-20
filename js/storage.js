@@ -35,6 +35,7 @@ async function saveDocument(key) {
     if (!doc) return;
     try {
         await dbRun('readwrite', store => store.put({ key, ...doc }));
+        if (typeof syncReport === 'function') syncReport(key);
     } catch (err) {
         console.warn('No se pudo guardar', key, err);
         if (!saveDocument.warned) {

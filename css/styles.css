@@ -1043,3 +1043,7 @@ html, body {
     cursor: pointer;
 }
 .option-check input { accent-color: var(--accent-blue); width: 16px; height: 16px; }
+
+/* ===== Informe Interventoría ===== */
+.informe-bar { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); margin-bottom: var(--spacing-md); }
+.informe-frame { width: 100%; height: calc(100vh - 250px); min-height: 480px; border: 1px solid var(--border-color); border-radius: var(--radius-lg); background: #fff; }

@@ -27,6 +27,10 @@
                     <span class="icon" aria-hidden="true">📋</span>
                     <span>Revisar</span>
                 </button>
+                <button type="button" class="nav-item" data-section="informe">
+                    <span class="icon" aria-hidden="true">🧾</span>
+                    <span>Informe Interventoría</span>
+                </button>
                 <button type="button" class="nav-item" data-section="export">
                     <span class="icon" aria-hidden="true">📊</span>
                     <span>Exportar</span>
@@ -99,6 +103,10 @@
                         <label class="option-check" title="Lee las fotos con OCR local (no se envían imágenes a internet). Puede tardar más.">
                             <input type="checkbox" id="optVerifyImages" checked>
                             Verificar imágenes del PDF y buscar respaldos en carpeta (OCR)
+                        </label>
+                        <label class="option-check" title="Abre las fotos originales de la carpeta de cada vivienda y lee recibo (NIC, NIU, dirección, consumos), cédula y certificado (matrícula 040). Es más lento.">
+                            <input type="checkbox" id="optHouseDocs" checked>
+                            Leer recibo, cédula y certificado en la carpeta de imágenes (más lento)
                         </label>
                         <button type="button" id="processPdfBtn" class="btn btn-success">
                             <span aria-hidden="true">⚡</span> Procesar PDFs
@@ -191,6 +199,20 @@
                     <span id="resultsInfo"></span>
                     <button type="button" id="loadMoreBtn" class="btn btn-secondary">Mostrar más</button>
                 </div>
+            </section>
+
+            <!-- SECCIÓN: INFORME DE INTERVENTORÍA -->
+            <section id="informeSection" class="section">
+                <div class="section-header">
+                    <h2>Informe Interventoría</h2>
+                    <p id="informeSummary">Cada lote procesado se guarda aquí con sus hallazgos y evidencias.</p>
+                </div>
+                <div class="informe-bar">
+                    <button type="button" id="informeRefreshBtn" class="btn btn-secondary" title="Guarda en el informe los PDFs que están cargados ahora">🔄 Incluir PDFs cargados</button>
+                    <button type="button" id="informeExportBtn" class="btn btn-success"><span aria-hidden="true">⬇️</span> Exportar HTML</button>
+                    <button type="button" id="informeClearBtn" class="btn btn-secondary" title="Borra solo el informe guardado">🗑️ Eliminar informe guardado</button>
+                </div>
+                <iframe id="informeFrame" class="informe-frame" title="Informe de interventoría"></iframe>
             </section>
 
             <!-- SECCIÓN: EXPORTAR -->
@@ -312,9 +334,11 @@
     <script src="js/storage.js"></script>
     <script src="js/imageClassifier.js"></script>
     <script src="js/imageChecker.js"></script>
+    <script src="js/houseDocs.js"></script>
     <script src="js/itemChecker.js"></script>
     <script src="js/excelExporter.js"></script>
     <script src="js/evidenceViewer.js"></script>
+    <script src="js/informe.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

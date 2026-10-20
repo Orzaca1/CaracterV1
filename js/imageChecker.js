@@ -172,13 +172,34 @@ function releaseOcr(worker) {
     else ocrIdle.push(worker);
 }
 
+/** Segunda pasada para fotos con mucho ruido (recibos): imagen ×2 y modo de texto disperso */
+function upscaleCanvas(source, factor, maxSide) {
+    const k = Math.min(factor, maxSide / Math.max(source.width, source.height));
+    const out = document.createElement('canvas');
+    out.width = Math.max(1, Math.round(source.width * k));
+    out.height = Math.max(1, Math.round(source.height * k));
+    out.getContext('2d').drawImage(source, 0, 0, out.width, out.height);
+    return out;
+}
+
 /** Texto de una imagen (null si el OCR no está disponible) */
 async function ocrText(px) {
     if (!(await initOcr())) return null;
     const worker = await acquireOcr();
     try {
-        const result = await worker.recognize(OCR_CONFIG.toInput(px.rgba, px.width, px.height));
-        return result.data.text || '';
+        const canvas = OCR_CONFIG.toInput(px.rgba, px.width, px.height);
+        let text = (await worker.recognize(canvas)).data.text || '';
+        const wordCount = (text.match(/[A-Za-zÁÉÍÓÚáéíóúñÑ]{3,}/g) || []).length;
+        if (wordCount < 25) {
+            await worker.setParameters({ tessedit_pageseg_mode: '11' });
+            try {
+                const sparse = (await worker.recognize(upscaleCanvas(canvas, 2, OCR_CONFIG.maxSide))).data.text || '';
+                text = `${text}\n${sparse}`;
+            } finally {
+                await worker.setParameters({ tessedit_pageseg_mode: '3' });
+            }
+        }
+        return text;
     } finally {
         releaseOcr(worker);
     }
@@ -217,8 +238,16 @@ async function ocrTextRotated(input, degrees) {
         context.rotate(degrees * Math.PI / 180);
         context.drawImage(source, -source.width * scale / 2, -source.height * scale / 2,
             source.width * scale, source.height * scale);
-        const result = await worker.recognize(canvas);
-        return result.data.text || '';
+        let text = (await worker.recognize(canvas)).data.text || '';
+        if ((text.match(/[A-Za-zÁÉÍÓÚáéíóúñÑ]{3,}/g) || []).length < 25) {
+            await worker.setParameters({ tessedit_pageseg_mode: '11' });
+            try {
+                text += '\n' + ((await worker.recognize(upscaleCanvas(canvas, 2, OCR_CONFIG.maxSide))).data.text || '');
+            } finally {
+                await worker.setParameters({ tessedit_pageseg_mode: '3' });
+            }
+        }
+        return text;
     } finally {
         if (source && typeof source.close === 'function') source.close();
         releaseOcr(worker);
@@ -424,7 +453,7 @@ function judgeExpectedImage(exp, text, values) {
 
 function shouldTryRotation(exp, text) {
     if (exp.kind !== 'doc') return false;
-    if (exp.doc === 'cedula') return true;
+    if (exp.doc === 'cedula' || exp.doc === 'recibo') return true;
     const words = fold(text).split(' ').filter(word => word.length >= 2);
     return scoreFamily(exp.doc, words) > 0;
 }
@@ -469,7 +498,7 @@ async function verifyOne(item, exp, recs, values) {
     if (text === null) return false;
     let result = judgeExpectedImage(exp, text, values);
     if (result.verdict !== 'ok' && shouldTryRotation(exp, text)) {
-        for (const degrees of [90, 270]) {
+        for (const degrees of [180, 90, 270]) {
             const rotatedText = await ocrTextRotated(px, degrees);
             if (rotatedText === null) break;
             const rotatedResult = judgeExpectedImage(exp, rotatedText, values);
@@ -516,7 +545,7 @@ async function verifyFolderImages(targets, folderImages, values, hooks) {
                 judgeExpectedImage(IMAGE_EXPECT[item.id], candidateText, values).verdict === 'ok'
             );
             if (!matchesAny(text) && [...unresolved].some(item => shouldTryRotation(IMAGE_EXPECT[item.id], text))) {
-                for (const degrees of [90, 270]) {
+                for (const degrees of [180, 90, 270]) {
                     const rotatedText = await ocrTextRotated(entry.file, degrees);
                     if (rotatedText === null) break;
                     texts.push(rotatedText);
@@ -650,6 +679,11 @@ async function verifyImages(items, imageMap, values, hooks = {}, folderImages = 
     };
     await Promise.all(Array.from({ length: Math.max(1, OCR_CONFIG.workers) }, runner));
     await verifyFolderImages([...new Set(targets)], folderImages, values, hooks);
+    if (IMAGE_VERIFY.houseDocs && folderImages.length && typeof verifyHouseDocs === 'function') {
+        try { await verifyHouseDocs(items, values, folderImages, hooks); } catch (error) {
+            console.warn('No se pudieron leer los documentos de la carpeta:', error);
+        }
+    }
 
     Object.values(imageMap).forEach(list => list.forEach(r => { r.px = null; }));   // libera memoria
 }

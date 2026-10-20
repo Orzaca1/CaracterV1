@@ -102,7 +102,7 @@ function initializeEventListeners() {
     $('loadMoreBtn').addEventListener('click', appendItems);
     $('clearSavedBtn').addEventListener('click', clearSavedSession);
     initChecklist();
-
+    initInforme();
 }
 
 /* ============ CARGA DE ARCHIVOS ============ */
@@ -265,6 +265,7 @@ async function processPDFs() {
     isProcessing = true;
     cancelRequested = false;
     IMAGE_VERIFY.enabled = $('optVerifyImages').checked;
+    IMAGE_VERIFY.houseDocs = $('optHouseDocs').checked;
     $('processPdfBtn').disabled = true;
     updateStatusBadge('loading', '⏳ Procesando');
     showLoading(true, `Procesando ${selectedFiles.length} PDF(s)...`);
@@ -603,6 +604,7 @@ function navigateToSection(sectionId) {
     const target = $(sectionId + 'Section');
     target.classList.add('active');
     target.scrollTop = 0;
+    if (sectionId === 'informe') renderInforme();
 
     document.querySelectorAll('.nav-item').forEach(item => {
         const active = item.dataset.section === sectionId;

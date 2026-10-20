@@ -29,7 +29,7 @@ const NUMBER_RE = /^-?\d+(?:[.,]\d+)?$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /** Opciones que controla la interfaz */
-const IMAGE_VERIFY = { enabled: true };
+const IMAGE_VERIFY = { enabled: true, houseDocs: true };
 
 /** Correos: no son obligatorios, pero si faltan o tienen mal formato -> REVISAR */
 const REVIEW_ONLY = { 18: true, 41: true };
@@ -1020,6 +1020,13 @@ function validateItem(item, values, ctx = { format: 'A', annexCount: 0 }) {
         const check = checkNiuAgainstList(value, values[6]);
         if (check) return fail('niu_list', check);
         return;
+    }
+
+    if (item.id === 30) {
+        const digits = value.replace(/\D/g, '');
+        if (digits && !digits.startsWith('040')) {
+            return fail('mismatch', `La matrícula inmobiliaria debe iniciar con 040 · Encontrado: ${value}`);
+        }
     }
 
     const rule = item.validationRule || 'notEmpty';
