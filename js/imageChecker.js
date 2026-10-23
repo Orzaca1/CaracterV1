@@ -205,18 +205,39 @@ async function ocrText(px) {
     }
 }
 
-async function ocrFile(file) {
-    if (!(await initOcr())) return null;
-    const worker = await acquireOcr();
-    try {
-        const result = await worker.recognize(file);
-        return result.data.text || '';
-    } finally {
-        releaseOcr(worker);
-    }
+/* Caché de OCR por archivo: una imagen nunca se lee dos veces (ni sus rotaciones) */
+const ocrFileCache = new Map();
+const ocrFileKey = file => `${file.name}|${file.size}|${file.lastModified}`;
+
+function ocrFile(file) {
+    const key = ocrFileKey(file);
+    if (ocrFileCache.has(key)) return ocrFileCache.get(key);
+    const job = (async () => {
+        if (!(await initOcr())) return null;
+        const worker = await acquireOcr();
+        try {
+            const result = await worker.recognize(file);
+            return result.data.text || '';
+        } finally {
+            releaseOcr(worker);
+        }
+    })();
+    ocrFileCache.set(key, job);
+    job.then(text => { if (text === null) ocrFileCache.delete(key); }, () => ocrFileCache.delete(key));
+    return job;
 }
 
-async function ocrTextRotated(input, degrees) {
+function ocrTextRotated(input, degrees) {
+    if (!(typeof File !== 'undefined' && input instanceof File)) return ocrTextRotatedRaw(input, degrees);
+    const key = `${ocrFileKey(input)}|r${degrees}`;
+    if (ocrFileCache.has(key)) return ocrFileCache.get(key);
+    const job = ocrTextRotatedRaw(input, degrees);
+    ocrFileCache.set(key, job);
+    job.then(text => { if (text === null) ocrFileCache.delete(key); }, () => ocrFileCache.delete(key));
+    return job;
+}
+
+async function ocrTextRotatedRaw(input, degrees) {
     const workerReady = await initOcr();
     if (!workerReady) return null;
     const worker = await acquireOcr();
@@ -259,6 +280,7 @@ async function terminateOcr() {
     const workers = ocrIdle;
     ocrIdle = [];
     ocrInitPromise = null;
+    ocrFileCache.clear();
     await Promise.all(workers.map(w => w.terminate().catch(() => {})));
 }
 
@@ -335,18 +357,18 @@ function docDataNote(expected, text, words, values) {
     const parts = [];
     const bonus = numberBonus(expected, text, values);
     const hasNumber = DOC_FAMILIES[expected].idItems.some(id => String(values[id] || '').replace(/\D/g, '').length >= 6);
-    if (hasNumber) parts.push(bonus ? `el ${label} coincide con el formulario` : `no se pudo leer el ${label} del formulario`);
+    if (hasNumber) parts.push(bonus ? `${label} coincide` : `${label} no confirmado`);
 
     const nm = nameCheck(words, values);
-    if (nm) parts.push(nm.hits / nm.total >= 0.5 ? 'el nombre coincide con el formulario' : 'no se encontró el nombre del formulario');
+    if (nm) parts.push(nm.hits / nm.total >= 0.5 ? 'nombre coincide' : 'nombre no confirmado');
 
     const addr = fold(String(values[6] || '')).split(' ').filter(t => /\d/.test(t) && t.length >= 2);
     if (addr.length) {
         const wordSet = new Set(words);
         const found = addr.filter(t => hasWord(wordSet, words, t)).length;
-        parts.push(found / addr.length >= 0.6 ? 'la dirección coincide' : 'no se pudo confirmar la dirección');
+        parts.push(found / addr.length >= 0.6 ? 'dirección coincide' : 'dirección no confirmada');
     }
-    return parts.length ? `; ${parts.join('; ')}` : '';
+    return parts.length ? ` · ${parts.join(' · ')}` : '';
 }
 
 function judgeDocument(expected, text, values, side = '') {
@@ -371,7 +393,7 @@ function judgeDocument(expected, text, values, side = '') {
             return {
                 verdict: 'fail',
                 code: 'wrong_image',
-                message: `La imagen parece el ${otherSide} de la cédula; se solicita el ${side}`
+                message: `Cédula ${otherSide}; se requiere ${side}.`
             };
         }
     }
@@ -386,11 +408,10 @@ function judgeDocument(expected, text, values, side = '') {
     // NO CUMPLE solo con evidencia fuerte de otro documento; si no, REVISAR (p. ej. cédula fotografiada sobre un recibo)
     if (otherKey && otherScore >= 4 && own === 0) {
         return { verdict: 'fail', code: 'wrong_image',
-                 message: `La imagen parece ${DOC_FAMILIES[otherKey].label}; la pregunta pide ${family.label}` };
+                 message: `Foto incorrecta: parece ${DOC_FAMILIES[otherKey].label}; se requiere ${family.label}.` };
     }
-    const hint = otherKey && otherScore >= 2 ? ` (el texto de la imagen se parece a ${DOC_FAMILIES[otherKey].label})` : '';
-    const sideHint = side ? ` y que corresponda al ${side}` : '';
-    return { verdict: 'review', message: `No se pudo confirmar que la imagen sea ${family.label}${sideHint}${hint}` };
+    const detected = otherKey && otherScore >= 2 ? `; parece ${DOC_FAMILIES[otherKey].label}` : '';
+    return { verdict: 'review', message: `${family.label}${side ? ` (${side})` : ''} no confirmada${detected}. Revisar foto.` };
 }
 
 function judgePhoto(exp, text) {
@@ -403,7 +424,7 @@ function judgePhoto(exp, text) {
     });
     if (bestKey && bestScore >= 4) {
         return { verdict: 'fail', code: 'wrong_image',
-                 message: `La imagen parece ${DOC_FAMILIES[bestKey].label}; la pregunta pide ${exp.what}` };
+                 message: `Foto incorrecta: parece ${DOC_FAMILIES[bestKey].label}; se requiere ${exp.what}.` };
     }
     return { verdict: 'ok', note: 'Imagen verificada (calidad y tipo)' };
 }
@@ -414,7 +435,7 @@ function judgeElectricalPhoto(exp, text) {
         return {
             verdict: 'fail',
             code: 'wrong_image',
-            message: 'La imagen parece un recibo de energía; se solicita el contador o medidor'
+            message: 'Foto incorrecta: es un recibo; se requiere el contador.'
         };
     }
     const cues = exp.kind === 'meter'
@@ -436,12 +457,12 @@ function judgeElectricalPhoto(exp, text) {
         return {
             verdict: 'fail',
             code: 'wrong_image',
-            message: `La imagen parece ${DOC_FAMILIES[otherKey].label}; se solicita ${exp.kind === 'meter' ? 'el contador o medidor' : 'los breakers o tablero eléctrico'}`
+            message: `Foto incorrecta: parece ${DOC_FAMILIES[otherKey].label}; se requiere ${exp.kind === 'meter' ? 'el contador' : 'el tablero eléctrico'}.`
         };
     }
     return {
         verdict: 'review',
-        message: `El OCR no pudo confirmar que la imagen corresponda a ${exp.kind === 'meter' ? 'un contador o medidor' : 'breakers o tablero eléctrico'}; revisar manualmente`
+        message: `${exp.kind === 'meter' ? 'Contador' : 'Tablero eléctrico'} no confirmado; revisar foto.`
     };
 }
 
@@ -478,7 +499,7 @@ function applyVerdict(item, v) {
     item.observation = v.message;
 }
 
-async function verifyOne(item, exp, recs, values) {
+async function verifyOne(item, exp, recs, values, items, deferReceiptConsumptionCheck = false) {
     const px = recs.map(r => r.px).find(Boolean);
     if (!px) return false;
     const st = imageStats(px);
@@ -513,11 +534,36 @@ async function verifyOne(item, exp, recs, values) {
             }
         }
     }
+    if (!deferReceiptConsumptionCheck && exp.kind === 'doc' && exp.doc === 'recibo' && result.verdict === 'ok' &&
+        typeof parseReceipt === 'function' && typeof houseApplyReceipt === 'function') {
+        const byId = {};
+        items.forEach(candidate => { byId[candidate.id] = candidate; });
+        houseApplyReceipt(byId, values, parseReceipt(text), item.pdfName);
+    }
     if (exp.kind !== 'doc' && typeof classifyImage === 'function') {
         result = refineWithClassification(exp, item.id, result, await classifyImage(px));
     }
     applyVerdict(item, result);
     return result.verdict === 'ok';
+}
+
+function markReceiptConsumptionReview(items) {
+    [119, 120, 121].forEach(id => {
+        const item = items.find(candidate => candidate.id === id);
+        if (!item || item.notApplicable) return;
+        if (!item.receiptComparison) {
+            item.receiptComparison = {
+                formValue: String(item.actualValue || '').trim() || 'Sin respuesta',
+                receiptValue: 'Sin lectura confirmada',
+                status: 'unknown'
+            };
+        }
+        if (item.status === 'compliant') {
+            item.status = 'review';
+            item.reasonCode = 'review';
+            item.observation = 'Consumo no confirmado contra recibo; revisar.';
+        }
+    });
 }
 
 /**
@@ -530,8 +576,13 @@ async function verifyFolderImages(targets, folderImages, values, hooks) {
     const inspected = [];
     let done = 0;
 
-    for (const entry of folderImages) {
+    for (const [entryIndex, entry] of folderImages.entries()) {
         if (!unresolved.size) break;
+        // Precarga: mientras se juzga esta imagen, los otros procesos de OCR leen las siguientes
+        for (let ahead = 1; ahead < OCR_CONFIG.workers; ahead++) {
+            const next = folderImages[entryIndex + ahead];
+            if (next && next.file.size && !/^signature[-_]/i.test(next.file.name)) ocrFile(next.file).catch(() => {});
+        }
         if (!entry.file.size || /^signature[-_]/i.test(entry.file.name)) continue;
         try {
             const text = await ocrFile(entry.file);
@@ -564,8 +615,8 @@ async function verifyFolderImages(targets, folderImages, values, hooks) {
                 if (!result) continue;
                 item.folderImageMatch = entry.file.name;
                 const note = item.id === 102
-                    ? `Se encontró una foto candidata del contador o medidor en la carpeta (${entry.file.name}), pero no está adjunta en el PDF. Esta foto no verifica la respuesta de ubicación del medidor; confirmar visualmente.`
-                    : `La imagen solicitada sí existe en la carpeta de la vivienda (${entry.file.name}), pero no está adjunta en el PDF para este ítem. El PDF no contiene la evidencia correspondiente.`;
+                    ? 'Foto del contador encontrada en carpeta, pero no adjunta al PDF; verificar ubicación.'
+                    : 'No contiene la imagen correspondiente en el PDF.';
                 if (item.id === 102) {
                     item.imageNote = note;
                     if (item.status !== 'compliant') {
@@ -608,9 +659,11 @@ async function verifyFolderImages(targets, folderImages, values, hooks) {
             }
             if (quality) continue;
             item.folderImageMatch = match.candidate.entry.file.name;
-            const note = `Se encontró una imagen candidata en la carpeta (${match.candidate.entry.file.name}), ubicada ${match.label}. No está adjunta en este ítem del PDF; confirmar visualmente que corresponda.`;
+            const note = item.id === 103
+                ? 'Foto candidata de tablero/breakers; no está adjunta al PDF.'
+                : 'Foto candidata de contador/medidor; no está adjunta al PDF. No verifica la ubicación.';
             if (item.id === 102) {
-                item.imageNote = `${note} La imagen no verifica la respuesta de ubicación del medidor.`;
+                item.imageNote = note;
                 if (item.status !== 'compliant') {
                     item.observation = `${item.observation ? `${item.observation}. ` : ''}${item.imageNote}`;
                 }
@@ -625,7 +678,7 @@ async function verifyFolderImages(targets, folderImages, values, hooks) {
 
     unresolved.forEach(item => {
         if (item.id === 102) {
-            const note = `No se pudo confirmar visualmente una foto de contador o medidor en las ${folderImages.length} imágenes de la carpeta; esto no determina la respuesta del ítem «Ubicación del medidor».`;
+            const note = 'Foto del medidor no confirmada; revisar ubicación.';
             item.imageNote = note;
             if (item.status !== 'compliant') {
                 item.observation = `${item.observation ? `${item.observation}. ` : ''}${note}`;
@@ -633,12 +686,21 @@ async function verifyFolderImages(targets, folderImages, values, hooks) {
             return;
         }
         const expected = IMAGE_EXPECT[item.id];
-        const label = expected.kind === 'doc' ? DOC_FAMILIES[expected.doc].label
-            : expected.kind === 'meter' ? 'un contador o medidor de energía'
-            : expected.kind === 'breaker' ? 'breakers o tablero eléctrico'
-            : expected.what;
-        const existing = item.observation ? `${item.observation}. ` : '';
-        item.observation = `${existing}Se revisaron ${folderImages.length} imagen(es) de la carpeta de esta vivienda, pero no se pudo confirmar ${label}; verificar manualmente y comprobar que la foto correcta esté adjunta en el PDF.`;
+        const labels = {
+            cedula: 'Cédula', recibo: 'Recibo de energía', certificado: 'Certificado de tradición',
+            autorizacion: 'Carta de autorización', discapacidad: 'Certificado de discapacidad'
+        };
+        const label = expected.kind === 'doc' ? labels[expected.doc]
+            : expected.kind === 'meter' ? 'Contador'
+            : expected.kind === 'breaker' ? 'Tablero eléctrico'
+            : String(expected.what || 'Foto solicitada').replace(/^una fotografía\s+/i, 'Foto ');
+        const side = expected.side ? ` (${expected.side})` : '';
+        const feminine = /^(cédula|carta|foto)/i.test(label);
+        item.observation = item.reasonCode === 'wrong_image'
+            ? `Foto incorrecta para ${label.toLowerCase()}${side}; reemplazar adjunto.`
+            : item.reasonCode === 'image_quality'
+                ? `${label}${side} ilegible; reemplazar foto.`
+                : `${label}${side} no ${feminine ? 'confirmada' : 'confirmado'}.`;
         if (item.status === 'compliant') {
             item.status = 'review';
             item.reasonCode = 'review';
@@ -649,13 +711,14 @@ async function verifyFolderImages(targets, folderImages, values, hooks) {
 async function verifyImages(items, imageMap, values, hooks = {}, folderImages = []) {
     const targets = [];
     const tasks = [];
+    const preferFolderReceipt = IMAGE_VERIFY.houseDocs && folderImages.length > 0;
     items.forEach(item => {
         const exp = IMAGE_EXPECT[item.id];
         if (!exp || item.notApplicable) return;
         const recs = imageMap[item.id];
         if (recs && recs.length) {
             tasks.push({ item, run: async () => {
-                const confirmed = await verifyOne(item, exp, recs, values);
+                const confirmed = await verifyOne(item, exp, recs, values, items, preferFolderReceipt);
                 if (!confirmed) targets.push(item);
             } });
         } else if (item.type === 'file' || (item.id === 102 && folderImages.length)) {
@@ -684,6 +747,9 @@ async function verifyImages(items, imageMap, values, hooks = {}, folderImages = 
             console.warn('No se pudieron leer los documentos de la carpeta:', error);
         }
     }
+
+    const receipt = items.find(item => item.id === 104);
+    if (!receipt || !receipt.receiptConsumptionVerified) markReceiptConsumptionReview(items);
 
     Object.values(imageMap).forEach(list => list.forEach(r => { r.px = null; }));   // libera memoria
 }

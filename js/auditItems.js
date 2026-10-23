@@ -438,8 +438,8 @@ const AUDIT_ITEMS = [
         mandatory: true,
         conditional: false,
         priority: "critico",
-        cumpleSi: "Campo completado o 'NO TIENE'",
-        noCumpleSi: "Campo vacío",
+        cumpleSi: "Formato 040-000000 (guion opcional)",
+        noCumpleSi: "Campo vacío o matrícula con formato distinto",
         expectedValue: "040413401",
         validationRule: "notEmpty",
         category: "Propiedad"

@@ -25,7 +25,7 @@ async function houseFilePx(file, maxSide) {
 
 /** OCR de la foto original en escala de grises con contraste (lee mejor la letra pequeña del recibo).
  *  crop = [x0, y0, x1, y1] en fracciones de la imagen ya rotada; se amplía para leer números pequeños. */
-async function houseOcr(file, degrees = 0, crop = null, psm = '11') {
+async function houseOcr(file, degrees = 0, crop = null, psm = '11', flip = false) {
     if (!(await initOcr())) return null;
     const worker = await acquireOcr();
     try {
@@ -40,6 +40,7 @@ async function houseOcr(file, degrees = 0, crop = null, psm = '11') {
         ctx.filter = 'grayscale(1) contrast(1.4)';
         ctx.translate(canvas.width / 2, canvas.height / 2);
         ctx.rotate(degrees * Math.PI / 180);
+        if (flip) ctx.scale(-1, 1);
         ctx.drawImage(bmp, -bmp.width * scale / 2, -bmp.height * scale / 2, bmp.width * scale, bmp.height * scale);
         if (bmp.close) bmp.close();
         let target = canvas;
@@ -147,7 +148,18 @@ function parseReceipt(text) {
         average.add(Math.round((sum6 + series[6]) / 7));
     }
     [...flat.matchAll(/promedio[^\d\n]{0,40}(\d{2,4})\b/gi)].forEach(m => average.add(Number(m[1])));
-    [...flat.matchAll(/actual\s+(\d{2,3})\s/gi)].forEach(m => average.add(Number(m[1])));
+    const normalized = fold(flat);
+    const userAverage = normalized.match(/(?:consumo promedio usuario\D{0,30}(\d{2,4})|(\d{2,4})\D{0,30}consumo promedio usuario)/);
+    if (userAverage) average.add(Number(userAverage[1] || userAverage[2]));
+    const actualLabel = flat.match(/(?:consumo\s+)?actual[^\d]{0,30}(\d{1,4})\b/i);
+    if (actualLabel) actual.add(Number(actualLabel[1]));
+
+    const variation = flat.match(/(?:(\d{1,4}(?:[,.]\d{1,2})?)\s*(?:kwh\s*)?variaci[oó]n\s+mes\s+anterior|variaci[oó]n\s+mes\s+anterior[^\d]{0,20}(\d{1,4}(?:[,.]\d{1,2})?))/i);
+    const current = actualLabel ? Number(actualLabel[1]) : series ? series[6] : null;
+    if (variation && Number.isFinite(current)) {
+        const previousFromVariation = current - Number((variation[1] || variation[2]).replace(',', '.'));
+        if (previousFromVariation >= 0) previous.add(previousFromVariation);
+    }
 
     return { nic, niu, address, series, actual: [...actual], previous: [...previous], average: [...average] };
 }
@@ -173,8 +185,8 @@ function parseIdCard(text) {
 function parseMatricula(text) {
     const flat = String(text || '');
     const found = [];
-    [...flat.matchAll(/(\d{3})\s?[-–—]\s?(\d{3,8})/g)].forEach(m => found.push(`${m[1]}-${m[2]}`));
-    const labelled = flat.match(/MATR[ÍI]CULA[^\d]{0,40}(\d{3})\s?[-–—]\s?(\d{3,8})/i);
+    [...flat.matchAll(/\b(\d{3})\s*[-–—]?\s*(\d{6})\b/g)].forEach(m => found.push(`${m[1]}-${m[2]}`));
+    const labelled = flat.match(/MATR[ÍI]CULA[^\d]{0,40}(\d{3})\s*[-–—]?\s*(\d{6})\b/i);
     return { labelled: labelled ? `${labelled[1]}-${labelled[2]}` : '', all: found };
 }
 
@@ -198,27 +210,28 @@ function houseApplyReceipt(byId, values, data, file) {
     const receipt = byId[104];
     const where = `(${file})`;
     const checks = [];
+    let consumptionVerified = true;
 
     const nic = houseCompareNumber(values[86], [data.nic]);
     if (!data.nic) checks.push('no se pudo leer el NIC');
     else if (nic === 'ok') checks.push(`NIC ${data.nic} coincide`);
     else if (nic === 'close') {
-        checks.push(`NIC leído ${data.nic} casi coincide con el formulario (${values[86]})`);
-        houseIssue(byId[86], 'review', 'review', `El NIC del recibo (${data.nic}) difiere en un dígito del formulario (${values[86]}); confirmar visualmente ${where}`);
+        checks.push(`NIC casi coincide (${data.nic})`);
+        houseIssue(byId[86], 'review', 'review', `NIC casi coincide: recibo ${data.nic}, formulario ${values[86]}. Verificar.`);
     } else if (nic === 'diff') {
-        checks.push(`NIC leído ${data.nic} ≠ formulario ${values[86]}`);
-        houseIssue(byId[86], 'non-compliant', 'mismatch', `El NIC del recibo (${data.nic}) no coincide con el del formulario (${values[86]}) ${where}`);
+        checks.push(`NIC difiere (${data.nic})`);
+        houseIssue(byId[86], 'non-compliant', 'mismatch', `NIC distinto: recibo ${data.nic}, formulario ${values[86]}.`);
     }
 
     const niu = houseCompareNumber(values[85], [data.niu]);
     if (!data.niu) checks.push('no se pudo leer el NIU');
     else if (niu === 'ok') checks.push(`NIU ${data.niu} coincide`);
     else if (niu === 'close') {
-        checks.push(`NIU leído ${data.niu} casi coincide con el formulario (${values[85]})`);
-        houseIssue(byId[85], 'review', 'review', `El NIU del recibo (${data.niu}) difiere en un dígito del formulario (${values[85]}); confirmar visualmente ${where}`);
+        checks.push(`NIU casi coincide (${data.niu})`);
+        houseIssue(byId[85], 'review', 'review', `NIU casi coincide: recibo ${data.niu}, formulario ${values[85]}. Verificar.`);
     } else if (niu === 'diff') {
-        checks.push(`NIU leído ${data.niu} ≠ formulario ${values[85]}`);
-        houseIssue(byId[85], 'non-compliant', 'mismatch', `El NIU del recibo (${data.niu}) no coincide con el del formulario (${values[85]}) ${where}`);
+        checks.push(`NIU difiere (${data.niu})`);
+        houseIssue(byId[85], 'non-compliant', 'mismatch', `NIU distinto: recibo ${data.niu}, formulario ${values[85]}.`);
     }
 
     if (!data.address) checks.push('no se pudo leer la dirección');
@@ -226,26 +239,40 @@ function houseApplyReceipt(byId, values, data, file) {
         const sim = houseAddressSimilarity(data.address, values[6]);
         if (sim >= 0.8) checks.push(`dirección del recibo coincide (${Math.round(sim * 100)}%)`);
         else {
-            checks.push(`dirección del recibo «${data.address.trim()}» no coincide con la del formulario (${Math.round(sim * 100)}%)`);
-            houseIssue(receipt, 'review', 'review', `La dirección leída en el recibo («${data.address.trim()}») no coincide con la del formulario («${values[6]}»); confirmar visualmente ${where}`);
+            checks.push(`dirección difiere (${Math.round(sim * 100)}%)`);
+            houseIssue(receipt, 'review', 'review', `Dirección del recibo distinta (${Math.round(sim * 100)}% de similitud). Revisar.`);
         }
     }
 
-    [[119, 'actual', 'consumo mes actual', 0], [120, 'previous', 'consumo mes anterior', 0], [121, 'average', 'promedio de consumo', 2]]
-        .forEach(([id, key, label, tolerance]) => {
+    [[119, 'actual', 'consumo mes actual'], [120, 'previous', 'consumo mes anterior'], [121, 'average', 'promedio de consumo']]
+        .forEach(([id, key, label]) => {
             const candidates = data[key];
             const formValue = parseFloat(String(values[id] || '').replace(',', '.'));
-            if (!candidates.length) { checks.push(`no se pudo leer ${label}`); return; }
-            if (Number.isNaN(formValue)) return;
-            const match = candidates.some(c => Math.abs(c - formValue) <= tolerance);
+            const match = !Number.isNaN(formValue) && candidates.some(c => c === formValue);
+            if (byId[id]) {
+                byId[id].receiptComparison = {
+                    formValue: String(values[id] || '').trim() || 'Sin respuesta',
+                    receiptValue: candidates.length ? candidates.join(' / ') : 'No legible',
+                    status: match ? 'match' : candidates.length ? 'mismatch' : 'unknown'
+                };
+            }
+            if (!candidates.length) {
+                consumptionVerified = false;
+                checks.push(`no se pudo leer ${label}`);
+                houseIssue(byId[id], 'review', 'review', `${label} no legible en el recibo; revisar.`);
+                return;
+            }
+            if (Number.isNaN(formValue)) { consumptionVerified = false; return; }
             if (match) checks.push(`${label} coincide (${formValue})`);
             else {
+                consumptionVerified = false;
                 checks.push(`${label}: recibo ${candidates.join('/')} ≠ formulario ${formValue}`);
-                houseIssue(byId[id], 'review', 'review', `El ${label} del recibo (${candidates.join(' o ')}) no coincide con el formulario (${formValue}); confirmar visualmente ${where}`);
+                houseIssue(byId[id], 'review', 'review', `${label} distinto: recibo ${candidates.join('/')}, formulario ${formValue}.`);
             }
         });
 
-    houseNote(receipt, `Recibo leído en carpeta ${where}: ${checks.join('; ')}`);
+    if (receipt) receipt.receiptConsumptionVerified = consumptionVerified;
+    houseNote(receipt, `Recibo de energía revisado; ${consumptionVerified ? 'consumos verificados' : 'verificar ítems 119–121'}.`);
 }
 
 function houseApplyIdCard(byId, values, text, file) {
@@ -256,13 +283,13 @@ function houseApplyIdCard(byId, values, text, file) {
     if (status === 'ok' || status === 'close') parts.push('el número de cédula coincide con el formulario');
     else if (status === 'diff') {
         parts.push('el número leído no coincide con el del formulario');
-        houseIssue(byId[40], 'review', 'review', `El número de cédula leído en la imagen de la carpeta (${file}) no coincide con el formulario (${formId}); confirmar visualmente`);
+        houseIssue(byId[40], 'review', 'review', 'Cédula no coincide con el formulario. Verificar.');
     } else if (!formId) parts.push('el formulario no trae número de cédula para cruzar');
     else parts.push('no se pudo leer el número de cédula');
     const words = fold(text).split(' ').filter(w => w.length >= 2);
     const nm = nameCheck(words, values);
     if (nm) parts.push(nm.hits / nm.total >= 0.5 ? 'el nombre coincide con el formulario' : 'no se encontró el nombre del formulario');
-    houseNote(idItem, `Cédula leída en carpeta (${file}): ${parts.join('; ')}`);
+    houseNote(idItem, `Cédula: ${parts.join('; ')}.`);
 }
 
 function houseApplyCertificate(byId, values, text, file) {
@@ -271,13 +298,13 @@ function houseApplyCertificate(byId, values, text, file) {
     const item = byId[32] || byId[33] || byId[30];
     if (!first) { houseNote(item, `Certificado en carpeta (${file}): no se pudo leer la matrícula`); return; }
     if (!first.startsWith('040')) {
-        houseIssue(byId[30], 'non-compliant', 'mismatch', `La matrícula inmobiliaria del certificado (${first}) no inicia con 040 (${file})`);
+        houseIssue(byId[30], 'non-compliant', 'mismatch', `Matrícula del certificado inválida: ${first}. Debe iniciar con 040.`);
         houseNote(item, `Matrícula leída ${first} no inicia con 040`);
         return;
     }
     const cmp = houseCompareNumber(values[30], [first.replace(/\D/g, '')]);
     if (cmp === 'diff') {
-        houseIssue(byId[30], 'review', 'review', `La matrícula del certificado (${first}) no coincide con la del formulario (${values[30]}); confirmar visualmente (${file})`);
+        houseIssue(byId[30], 'review', 'review', `Matrícula distinta: certificado ${first}, formulario ${values[30]}. Verificar.`);
     }
     houseNote(item, `Matrícula ${first} inicia con 040${cmp === 'ok' || cmp === 'close' ? ' y coincide con el formulario' : cmp === 'diff' ? ' pero difiere del formulario' : ''}`);
 }
@@ -305,12 +332,23 @@ async function verifyHouseDocs(items, values, folderImages, hooks = {}) {
             } catch (error) { console.warn('No se pudo clasificar', row.entry.file.name, error); }
         }
     }
+    const classifierAvailable = ranked.some(row => row.cls);
     const picked = new Map();
-    ['bill', 'id', 'letter'].forEach(kind => {
-        ranked.filter(r => r[kind] >= 10).sort((a, b) => b[kind] - a[kind]).slice(0, HOUSE_DOCS.maxPerKind)
-            .forEach(r => picked.set(r.entry.file.name, r));
-    });
-    let candidates = [...picked.values()];
+    let candidates;
+    if (!classifierAvailable) {
+        candidates = ranked.slice(0, HOUSE_DOCS.maxCandidates);
+        candidates.forEach(row => { row.receiptCandidate = true; });
+    } else {
+        [...ranked].sort((a, b) => b.bill - a.bill).slice(0, HOUSE_DOCS.maxPerKind).forEach(row => {
+            row.receiptCandidate = true;
+            picked.set(row.entry.file.name, row);
+        });
+        ['id', 'letter'].forEach(kind => {
+            ranked.filter(r => r[kind] >= 10).sort((a, b) => b[kind] - a[kind]).slice(0, HOUSE_DOCS.maxPerKind)
+                .forEach(r => picked.set(r.entry.file.name, r));
+        });
+        candidates = [...picked.values()];
+    }
     if (!candidates.length) candidates = ranked.filter(r => !r.cls).slice(0, HOUSE_DOCS.maxCandidates);
     candidates = candidates.slice(0, HOUSE_DOCS.maxCandidates);
 
@@ -328,10 +366,23 @@ async function verifyHouseDocs(items, values, folderImages, hooks = {}) {
         const classify = t => ['recibo', 'cedula', 'certificado'].find(k => judgeDocument(k, t, values).verdict === 'ok') || '';
         let kind = classify(text);
         let degrees = 0;
-        if (!kind && row.bill >= 25) {
-            for (const deg of [180, 90, 270]) {
-                const rotated = await houseOcr(file, deg);
-                if (rotated && classify(rotated)) { text = rotated; kind = classify(rotated); degrees = deg; break; }
+        let flipped = false;
+        if (!kind && row.receiptCandidate) {
+            const orientations = [
+                [180, false], [90, false], [270, false],
+                [0, true], [180, true], [90, true], [270, true]
+            ];
+            for (const [deg, mirror] of orientations) {
+                if (hooks.status) hooks.status(`probando orientación del recibo ${file.name}`);
+                const rotated = await houseOcr(file, deg, null, '11', mirror);
+                const rotatedKind = rotated && classify(rotated);
+                if (rotatedKind) {
+                    text = rotated;
+                    kind = rotatedKind;
+                    degrees = deg;
+                    flipped = mirror;
+                    break;
+                }
             }
         }
         if (!kind || seen[kind]) continue;
@@ -340,7 +391,7 @@ async function verifyHouseDocs(items, values, folderImages, hooks = {}) {
             const data = parseReceipt(text);
             if (!data.previous.length) {
                 try {
-                    const rowNums = parseChartRow(await houseOcr(file, degrees, [0.04, 0.56, 0.46, 0.68], '6'));
+                    const rowNums = parseChartRow(await houseOcr(file, degrees, [0.04, 0.56, 0.46, 0.68], '6', flipped));
                     if (rowNums.length >= 3) {
                         const last = rowNums[rowNums.length - 1];
                         if (last.length >= 2) data.actual.push(Number(last));

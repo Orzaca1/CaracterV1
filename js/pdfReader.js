@@ -283,6 +283,13 @@ const DERIVED = {
 
 function applyApplicabilityRules(values, found) {
     const reasons = {};
+    if (normalizeText(values[20]).startsWith('PROPIETARIO')) {
+        [22, 23, 34].forEach(id => {
+            values[id] = 'NO APLICA';
+            found[id] = true;
+            reasons[id] = 'No aplica porque quien atiende la visita es el propietario';
+        });
+    }
     if (normalizeText(values[26]) === 'NO') {
         AUDIT_ITEMS.filter(def => def.id > 26).forEach(def => {
             values[def.id] = 'NO APLICA';
@@ -293,6 +300,11 @@ function applyApplicabilityRules(values, found) {
         values[106] = 'NO APLICA';
         found[106] = true;
         reasons[106] = 'No aplica porque no se identificaron riesgos eléctricos o estructurales';
+    }
+    if (normalizeText(values[20]).startsWith('PROPIETARIO')) {
+        values[23] = 'NO APLICA';
+        found[23] = true;
+        reasons[23] = 'No aplica porque quien atiende la visita es el propietario';
     }
     return reasons;
 }
@@ -306,7 +318,6 @@ const isNo = v => v === 'NO';
 const hasOtro = v => v.includes('OTRO');
 
 const CONDITIONS = {
-    106: { parent: 105, when: isYes, why: 'se identificaron riesgos eléctricos o estructurales' },
     22:  { parent: 20,  when: v => v !== '' && !v.startsWith('PROPIETARIO'), why: 'quien atiende la visita no es el propietario' },
     21:  { parent: 20,  when: hasOtro, why: 'la relación con el propietario es "OTRO"' },
     23:  { parent: 22,  when: isYes,   why: 'indicó contar con autorización para entregar información' },
@@ -775,11 +786,18 @@ async function processPDF({ file, path }, hooks = {}) {
                 found: found[def.id],
                 evidence: evidence[def.id] || null,
                 actualValue: values[def.id] || '',
-                searchKey: fold(`${def.description} ${def.section} ${key}`)
+                searchKey: fold(`${def.description} ${def.section} ${key} ${values[def.id] || ''}`)
             };
             validateItem(item, values, ctx);
             return item;
         });
+
+        const roofPhoto = items.find(item => item.id === 106);
+        if (roofPhoto && !(imageMap[106] && imageMap[106].length)) {
+            roofPhoto.status = 'non-compliant';
+            roofPhoto.reasonCode = 'missing_file';
+            roofPhoto.observation = 'Falta la foto obligatoria del techo y su estructura adjunta en el PDF';
+        }
 
         // Solo el formato A (KoboToolbox) es válido: cualquier otro se rechaza completo
         if (format !== 'A') {
@@ -798,8 +816,21 @@ async function processPDF({ file, path }, hooks = {}) {
         }
 
         // Contenido de las imágenes (OCR local + análisis de píxeles)
-        if (readPixels && (Object.keys(imageMap).length || (hooks.folderImages && hooks.folderImages.length))) {
+        if (readPixels) {
             await verifyImages(items, imageMap, values, hooks, hooks.folderImages || []);
+        } else {
+            [119, 120, 121].forEach(id => {
+                const item = items.find(candidate => candidate.id === id);
+                if (!item || item.notApplicable || item.status !== 'compliant') return;
+                item.receiptComparison = {
+                    formValue: String(item.actualValue || '').trim() || 'Sin respuesta',
+                    receiptValue: 'Verificación desactivada',
+                    status: 'unknown'
+                };
+                item.status = 'review';
+                item.reasonCode = 'review';
+                item.observation = 'La verificación de imágenes está desactivada; no se pudo comparar este consumo con el recibo.';
+            });
         }
 
         pdfDocuments[key] = { status: 'processed', format, items, file };
@@ -880,6 +911,24 @@ function textSimilarity(a, b) {
 }
 
 let addressIndex = null;
+let numberIndex = null;
+const addressCheckCache = new Map();
+
+/** Registros del listado cuya dirección tiene los mismos números (búsqueda O(1)) */
+function suggestByAddress(address) {
+    if (typeof BENEFICIARIOS === 'undefined') return [];
+    if (!numberIndex) {
+        numberIndex = new Map();
+        BENEFICIARIOS.forEach(b => {
+            const k = addressNumbers(b.direccion).sort().join(',');
+            if (!k) return;
+            if (!numberIndex.has(k)) numberIndex.set(k, []);
+            numberIndex.get(k).push(b);
+        });
+    }
+    const key = addressNumbers(address).sort().join(',');
+    return key ? (numberIndex.get(key) || []) : [];
+}
 
 /** Mensaje de error si la dirección no coincide (≥90 %) con ninguna del listado; '' si coincide */
 function checkAddressAgainstList(address) {
@@ -887,15 +936,51 @@ function checkAddressAgainstList(address) {
     if (!addressIndex) addressIndex = BENEFICIARIOS.map(b => ({ b, c: canonAddress(b.direccion) }));
     const target = canonAddress(address);
     if (!target) return '';
+    if (addressCheckCache.has(target)) return addressCheckCache.get(target);
+    const message = computeAddressCheck(target);
+    addressCheckCache.set(target, message);
+    return message;
+}
+
+/** Similitud de Levenshtein que aborta cuando ya no puede superar `floorScore` (mismo resultado, mucho más rápido) */
+function boundedSimilarity(a, b, floorScore) {
+    if (a === b) return 1;
+    if (!a || !b) return 0;
+    const longest = Math.max(a.length, b.length);
+    const limit = (1 - floorScore) * longest;      // solo importa si la distancia es < limit
+    let prev = new Array(b.length + 1), cur = new Array(b.length + 1);
+    for (let j = 0; j <= b.length; j++) prev[j] = j;
+    for (let i = 1; i <= a.length; i++) {
+        cur[0] = i;
+        let rowMin = i;
+        for (let j = 1; j <= b.length; j++) {
+            const v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1));
+            cur[j] = v;
+            if (v < rowMin) rowMin = v;
+        }
+        if (floorScore > 0 && rowMin >= limit) return 0;
+        [prev, cur] = [cur, prev];
+    }
+    return 1 - prev[b.length] / longest;
+}
+
+let canonSet = null;
+
+function computeAddressCheck(target) {
+    if (!canonSet) canonSet = new Set(addressIndex.map(e => e.c));
+    if (canonSet.has(target)) return '';            // coincidencia exacta: O(1)
     let best = null, bestScore = 0;
     for (const e of addressIndex) {
         if (Math.abs(e.c.length - target.length) > target.length * 0.2) continue;
-        const s = textSimilarity(target, e.c);
-        if (s > bestScore) { bestScore = s; best = e.b; }
+        const s = boundedSimilarity(target, e.c, bestScore);
+        if (s > bestScore) {
+            bestScore = s; best = e.b;
+            if (bestScore >= 0.9) return '';        // ya coincide: no hace falta buscar la mejor
+        }
     }
-    if (bestScore >= 0.9) return '';
-    const hint = best ? ` Más parecida en el listado (${Math.round(bestScore * 100)}%): "${best.direccion}" (NIU ${best.niu})` : '';
-    return `La dirección "${address}" no coincide (mínimo 90%) con ninguna del listado de beneficiarios.${hint}`;
+    return best
+        ? `Dirección no registrada (${Math.round(bestScore * 100)}% similitud). Candidata: ${best.direccion} · NIU ${best.niu}.`
+        : 'Dirección no registrada en el listado; verificar beneficiario.';
 }
 
 /** Devuelve un mensaje de error, o '' si el NIU existe en el listado y su dirección coincide */
@@ -907,15 +992,15 @@ function checkNiuAgainstList(niu, address) {
     }
     const rec = niuIndex.get(niuKey(niu));
     if (!rec) {
-        const suggested = BENEFICIARIOS.filter(b => sameAddress(address, b.direccion));
+        const suggested = suggestByAddress(address);
         if (suggested.length) {
-            const list = suggested.slice(0, 3).map(b => `${b.niu} (${b.direccion})`).join(' · ');
-            return `El NIU ${niu} no está en el listado de beneficiarios. NIU correcto según la dirección: ${list}`;
+            const record = suggested[0];
+            return `NIU ${niu} no registrado. NIU sugerido: ${record.niu} · ${record.direccion}.`;
         }
-        return `El NIU ${niu} no está en el listado de beneficiarios y no se encontró la dirección en el listado`;
+        return `NIU ${niu} no registrado; verificar beneficiario.`;
     }
     if (!sameAddress(address, rec.direccion)) {
-        return `La dirección no coincide con el listado para el NIU ${niu}. PDF: "${address}" · Listado: "${rec.direccion}"`;
+        return `Dirección distinta para NIU ${niu}. Listado: ${rec.direccion}.`;
     }
     return '';
 }
@@ -928,6 +1013,15 @@ function checkNiuAgainstList(niu, address) {
  * values = respuestas de todos los items del mismo PDF (para los condicionales).
  * ctx = { format, annexCount }
  */
+function isValidMatricula(value) {
+    return /^040[-–—]?\d{6}$/.test(String(value || '').trim());
+}
+
+function missingImageFile(value) {
+    const match = String(value || '').match(/no se pudo encontrar\s+(.+?\.(?:jpe?g|png|webp|gif|bmp|tiff?|heic))\b/i);
+    return match ? match[1] : '';
+}
+
 function validateItem(item, values, ctx = { format: 'A', annexCount: 0 }) {
     const value = (item.actualValue || '').trim();
     const cond = CONDITIONS[item.id];
@@ -940,6 +1034,24 @@ function validateItem(item, values, ctx = { format: 'A', annexCount: 0 }) {
 
     if (item.notApplicable) {
         item.autoReason = item.notApplicableReason;
+        return;
+    }
+
+    if (cond && cond.parent) {
+        const parentValue = normalizeText(values[cond.parent]);
+        if (parentValue && !cond.when(parentValue)) {
+            item.notApplicable = true;
+            item.notApplicableReason = `No aplica porque ${cond.why}`;
+            item.autoReason = item.notApplicableReason;
+            return;
+        }
+    }
+
+    const missingImage = missingImageFile(value);
+    if (missingImage) {
+        item.status = 'non-compliant';
+        item.reasonCode = 'missing_file';
+        item.observation = `No se encontró el archivo de imagen ${missingImage}`;
         return;
     }
 
@@ -977,14 +1089,20 @@ function validateItem(item, values, ctx = { format: 'A', annexCount: 0 }) {
         const required = cond && !cond.optional && parentValue && cond.when(parentValue);
 
         if (cond && !required) {
-            item.autoReason = cond.optional ? 'Opcional: sin respuesta' : 'No aplica según las respuestas previas';
+            if (cond.optional) {
+                item.autoReason = 'Opcional: sin respuesta';
+                return;
+            }
+            item.notApplicable = true;
+            item.notApplicableReason = 'No aplica según las respuestas previas';
+            item.autoReason = item.notApplicableReason;
             return;
         }
 
         if (isFileType && ctx.format === 'B') {
             // El formato B no incluye imágenes: no se puede comprobar
             const note = ctx.annexCount > 0
-                ? `El formato no indica a qué pregunta pertenece cada imagen (${ctx.annexCount} anexos): verificar manualmente`
+                ? `PDF con ${ctx.annexCount} anexos sin asignar; revisar imágenes.`
                 : 'El registro no incluye imágenes (0 anexos): verificar en Kobo';
             if (FORMAT_B_FILES_STATUS === 'non-compliant' && ctx.annexCount === 0) return fail('missing_file', 'Sin imágenes en el registro (0 anexos)');
             return review(note);
@@ -1023,9 +1141,8 @@ function validateItem(item, values, ctx = { format: 'A', annexCount: 0 }) {
     }
 
     if (item.id === 30) {
-        const digits = value.replace(/\D/g, '');
-        if (digits && !digits.startsWith('040')) {
-            return fail('mismatch', `La matrícula inmobiliaria debe iniciar con 040 · Encontrado: ${value}`);
+        if (!isValidMatricula(value)) {
+            return fail('format', `La matrícula debe tener el formato 040-000000 o 040000000 · Encontrado: ${value}`);
         }
     }
 

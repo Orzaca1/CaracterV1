@@ -7,8 +7,10 @@
     <title>Auditoría Colombia Solar</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/pro.css">
+    <meta name="theme-color" content="#070d1a">
 </head>
 <body>
     <div class="app-container">
@@ -26,6 +28,10 @@
                 <button type="button" class="nav-item" data-section="review">
                     <span class="icon" aria-hidden="true">📋</span>
                     <span>Revisar</span>
+                </button>
+                <button type="button" class="nav-item" data-section="subsanar">
+                    <span class="icon" aria-hidden="true">🛠️</span>
+                    <span>Subsanar</span>
                 </button>
                 <button type="button" class="nav-item" data-section="informe">
                     <span class="icon" aria-hidden="true">🧾</span>
@@ -134,31 +140,31 @@
                 <!-- RESUMEN -->
                 <div id="summaryCards" class="summary-cards hidden">
                     <div class="card">
-                        <div class="card-value" id="totalItems">0</div>
-                        <div class="card-label">Evaluados</div>
-                    </div>
-                    <div class="card success">
-                        <div class="card-value" id="compliantCount">0</div>
-                        <div class="card-label">Cumplen</div>
-                    </div>
-                    <div class="card error">
-                        <div class="card-value" id="nonCompliantCount">0</div>
-                        <div class="card-label">No Cumplen</div>
-                    </div>
-                    <div class="card warning">
-                        <div class="card-value" id="pendingCount">0</div>
-                        <div class="card-label">Por revisar</div>
+                        <div class="card-value kpi-answer" id="kpiHouseClosed">—</div>
+                        <div class="card-label">¿La casa está cerrada?</div>
                     </div>
                     <div class="card">
-                        <div class="card-value" id="notApplicableCount">0</div>
-                        <div class="card-label">No aplica</div>
+                        <div class="card-value kpi-answer" id="kpiDataConsent">—</div>
+                        <div class="card-label">¿Aceptó tratamiento de datos?</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-value kpi-answer" id="kpiParticipation">—</div>
+                        <div class="card-label">¿Quiere participar?</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-value kpi-answer" id="kpiCertificate">—</div>
+                        <div class="card-label">Certificado de tradición</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-value" id="kpiPdfCompliance">—</div>
+                        <div class="card-label">Cumplimiento del PDF</div>
                     </div>
                 </div>
 
                 <!-- BARRA DE CUMPLIMIENTO -->
                 <div class="compliance-section hidden" id="complianceSection">
                     <div class="compliance-header">
-                        <span>Cumplimiento General</span>
+                        <span>Cumplimiento del PDF seleccionado</span>
                         <span id="compliancePercent">0%</span>
                     </div>
                     <div class="compliance-bar">
@@ -198,6 +204,35 @@
                 <div id="loadMoreWrap" class="load-more hidden">
                     <span id="resultsInfo"></span>
                     <button type="button" id="loadMoreBtn" class="btn btn-secondary">Mostrar más</button>
+                </div>
+            </section>
+
+            <!-- SECCIÓN: SUBSANAR RESPUESTAS -->
+            <section id="subsanarSection" class="section">
+                <div class="section-header">
+                    <h2>Propuesta de subsanación</h2>
+                    <p>Corrige respuestas de texto observadas. Los campos de imágenes no se incluyen.</p>
+                </div>
+                <div class="remediation-toolbar">
+                    <label for="correctionPdfSelect">PDF seleccionado</label>
+                    <select id="correctionPdfSelect" class="filter-select">
+                        <option value="">No hay PDFs procesados</option>
+                    </select>
+                    <span id="correctionCount" class="remediation-count">0 cambios propuestos</span>
+                </div>
+                <div class="remediation-notice">
+                    Esta propuesta no modifica el PDF original ni reemplaza la corrección en el formulario fuente.
+                </div>
+                <div id="remediationItems" class="remediation-items">
+                    <div class="empty-state">
+                        <div class="empty-icon">📝</div>
+                        <p>Selecciona un PDF procesado</p>
+                        <small>Se mostrarán únicamente campos de texto marcados No cumple o Revisar.</small>
+                    </div>
+                </div>
+                <div id="remediationActions" class="remediation-actions hidden">
+                    <button type="button" id="saveCorrectionBtn" class="btn btn-primary">Guardar propuesta</button>
+                    <button type="button" id="exportCorrectionBtn" class="btn btn-secondary" disabled>Descargar hoja de subsanación</button>
                 </div>
             </section>
 
@@ -263,6 +298,25 @@
             <p id="evidenceDesc" class="evidence-desc"></p>
             <p id="evidenceNote" class="evidence-note"></p>
             <div id="evidenceBody" class="evidence-body"></div>
+        </div>
+    </div>
+
+    <!-- MODAL PARA CONFIRMAR DIRECCIONES CONTRA EL LISTADO -->
+    <div id="beneficiaryModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="beneficiaryTitle">
+        <div class="modal-content beneficiary-content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="beneficiaryTitle">Listado de beneficiarios</h2>
+                    <p id="beneficiaryDetectedAddress" class="beneficiary-detected"></p>
+                </div>
+                <button type="button" class="btn-close" id="beneficiaryClose" aria-label="Cerrar">✕</button>
+            </div>
+            <div class="beneficiary-search-wrap">
+                <label for="beneficiarySearch">Buscar por dirección, NIU o barrio</label>
+                <input type="search" id="beneficiarySearch" class="filter-input" autocomplete="off">
+                <span id="beneficiaryResultsCount" class="beneficiary-count"></span>
+            </div>
+            <div id="beneficiaryResults" class="beneficiary-results"></div>
         </div>
     </div>
 
@@ -339,6 +393,7 @@
     <script src="js/excelExporter.js"></script>
     <script src="js/evidenceViewer.js"></script>
     <script src="js/informe.js"></script>
+    <script src="js/evaluator.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
